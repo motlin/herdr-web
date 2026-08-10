@@ -46,6 +46,7 @@
   custom CSS fallback stacks.
 - Added a terminal palette setting that imports Ghostty theme color lines for exact ANSI color
   matching.
+- Added one-action terminal appearance import from the selected bridge's standard Ghostty config.
 
 ### Changed
 
@@ -54,6 +55,8 @@
   [PR #57](https://github.com/kcosr/herdr-web/pull/57), based on work proposed by
   [Hopkins (@LosEcher)](https://github.com/LosEcher) in
   [PR #51](https://github.com/kcosr/herdr-web/pull/51).
+- The Ghostty palette field now accepts a complete config and applies its font, size, and supported
+  colors together.
 - Split the Space-scoped sidebar into independently scrolling Spaces and content panes with sticky
   section headers.
 

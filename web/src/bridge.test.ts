@@ -322,15 +322,18 @@ describe("capabilities", () => {
         min_android_app_compat: 2,
         agent_activity: { version: 1 },
         agent_pins: { version: 1 },
+        ghostty_config: { version: 1 },
         notes: { version: 1 },
       }),
-    ).toEqual({
+    ).toStrictEqual({
       commands: ["pane.split"],
       bridge_version: "1.2.3",
       web_compat: 1,
       min_android_app_compat: 2,
       agent_activity: { version: 1 },
       agent_pins: { version: 1 },
+      ghostty_config: { version: 1 },
+      launcher_presets: undefined,
       notes: { version: 1 },
     });
   });

@@ -63,6 +63,7 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_STATIC_DIR: &str = "web/dist";
 const MIN_HERDR_VERSION: (u64, u64, u64) = (0, 8, 0);
 const MIN_HERDR_VERSION_LABEL: &str = "0.8.0";
+const MAX_GHOSTTY_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 const MAX_NOTES_REQUEST_BYTES: usize = 512 * 1024;
 const MAX_TERMINAL_INPUT_CHUNK_BYTES: usize = 768 * 1024;
@@ -152,6 +153,7 @@ struct Capabilities {
     commands: &'static [&'static str],
     agent_activity: AgentActivityCapability,
     agent_pins: AgentPinsCapability,
+    ghostty_config: GhosttyConfigCapability,
     launcher_presets: LauncherPresetsCapability,
     notes: NotesCapability,
 }
@@ -167,6 +169,11 @@ struct AgentPinsCapability {
 }
 
 #[derive(Debug, Serialize)]
+struct GhosttyConfigCapability {
+    version: u32,
+}
+
+#[derive(Debug, Serialize)]
 struct LauncherPresetsCapability {
     version: u32,
 }
@@ -174,6 +181,12 @@ struct LauncherPresetsCapability {
 #[derive(Debug, Serialize)]
 struct NotesCapability {
     version: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct GhosttyConfigResponse {
+    version: u32,
+    source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1041,6 +1054,10 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
         .route(
             "/api/capabilities",
             get(capabilities_handler).options(preflight_handler),
+        )
+        .route(
+            "/api/ghostty-config",
+            get(ghostty_config_handler).options(preflight_handler),
         )
         .route(
             "/api/command",
@@ -2893,9 +2910,96 @@ async fn capabilities_handler(
         commands: ALLOWED_COMMANDS,
         agent_activity: AgentActivityCapability { version: 1 },
         agent_pins: AgentPinsCapability { version: 1 },
+        ghostty_config: GhosttyConfigCapability { version: 1 },
         launcher_presets: LauncherPresetsCapability { version: 1 },
         notes: NotesCapability { version: 1 },
     }))
+}
+
+async fn ghostty_config_handler(
+    State(state): State<BridgeState>,
+    headers: HeaderMap,
+) -> Result<Json<GhosttyConfigResponse>, BridgeError> {
+    ensure_allowed_request(&headers, &state.request_policy)?;
+    let response = tokio::task::spawn_blocking(load_ghostty_config)
+        .await
+        .map_err(|err| BridgeError::Protocol(err.to_string()))??;
+    Ok(Json(response))
+}
+
+fn load_ghostty_config() -> Result<GhosttyConfigResponse, BridgeError> {
+    for path in ghostty_config_paths() {
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(BridgeError::Io(err)),
+        };
+        if metadata.len() > MAX_GHOSTTY_CONFIG_BYTES {
+            return Err(BridgeError::BadRequest(
+                "Ghostty config exceeds the 64 KiB import limit".to_string(),
+            ));
+        }
+        let source = std::fs::read_to_string(path)?;
+        return Ok(GhosttyConfigResponse {
+            version: 1,
+            source: ghostty_terminal_appearance_source(&source)?,
+        });
+    }
+    Err(BridgeError::BadRequest(
+        "Ghostty config was not found in a standard config directory".to_string(),
+    ))
+}
+
+fn ghostty_config_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(config_home) = non_empty_env_path("XDG_CONFIG_HOME") {
+        paths.push(config_home.join("ghostty").join("config"));
+    }
+    if let Some(home) = non_empty_env_path("HOME") {
+        paths.push(home.join(".config").join("ghostty").join("config"));
+        paths.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("com.mitchellh.ghostty")
+                .join("config"),
+        );
+    }
+    paths.dedup();
+    paths
+}
+
+fn ghostty_terminal_appearance_source(source: &str) -> Result<String, BridgeError> {
+    let mut appearance_lines = Vec::new();
+    for raw_line in source.lines() {
+        let line = raw_line.trim();
+        let Some((key, _)) = line.split_once('=') else {
+            continue;
+        };
+        if ghostty_terminal_appearance_key(key.trim()) {
+            appearance_lines.push(line);
+        }
+    }
+    if appearance_lines.is_empty() {
+        return Err(BridgeError::BadRequest(
+            "Ghostty config contains no supported terminal appearance settings".to_string(),
+        ));
+    }
+    Ok(appearance_lines.join("\n"))
+}
+
+fn ghostty_terminal_appearance_key(key: &str) -> bool {
+    matches!(
+        key,
+        "font-family"
+            | "font-size"
+            | "background"
+            | "foreground"
+            | "cursor-color"
+            | "cursor-text"
+            | "selection-background"
+            | "selection-foreground"
+            | "palette"
+    )
 }
 
 async fn agent_activity_list_handler(
@@ -4490,6 +4594,44 @@ mod tests {
         headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
         insert_static_cache_header(&mut headers, "/index.html", StatusCode::OK);
         assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-store");
+    }
+
+    #[test]
+    fn ghostty_config_import_exposes_only_terminal_appearance_settings() {
+        let source = ghostty_terminal_appearance_source(
+            r#"
+                # Example config
+                font-family = Example Mono
+                font-size = 16
+                background = #000000
+                foreground = #cccccc
+                cursor-color = #bbbbbb
+                selection-background = #b5d5ff
+                selection-foreground = #000000
+                palette = 0=#000000
+                shell-integration-features = no-title
+                keybind = shift+enter=text:\n
+            "#,
+        )
+        .expect("appearance settings should parse");
+
+        assert_eq!(
+            source,
+            "font-family = Example Mono\nfont-size = 16\nbackground = #000000\nforeground = #cccccc\ncursor-color = #bbbbbb\nselection-background = #b5d5ff\nselection-foreground = #000000\npalette = 0=#000000"
+        );
+    }
+
+    #[test]
+    fn ghostty_config_import_rejects_configs_without_appearance_settings() {
+        let result = ghostty_terminal_appearance_source(
+            "shell-integration-features = no-title\nkeybind = shift+enter=text:\\n",
+        );
+
+        assert!(matches!(
+            result,
+            Err(BridgeError::BadRequest(message))
+                if message == "Ghostty config contains no supported terminal appearance settings"
+        ));
     }
 
     #[test]

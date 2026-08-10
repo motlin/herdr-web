@@ -159,6 +159,11 @@ import {
   parseTerminalOutputCoalesceMs,
 } from "./terminalOutputCoalescing";
 import {
+  fetchGhosttyConfig,
+  supportsGhosttyConfigImport,
+  terminalAppearanceFromGhosttySource,
+} from "./terminalConfig";
+import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
   parseTerminalFontFamily,
@@ -1365,6 +1370,41 @@ export function App() {
     () => selectedRuntime?.httpUrl ?? disconnectedHttpUrl,
     [selectedRuntime?.connectionKey],
   );
+  const applyGhosttyAppearanceSource = useCallback((source: string) => {
+    const appearance = terminalAppearanceFromGhosttySource(source);
+    if (appearance.fontFamily !== undefined) {
+      setTerminalFontFamily(appearance.fontFamily);
+    }
+    if (appearance.fontSizePx !== undefined) {
+      setTerminalFontSizePx(appearance.fontSizePx);
+    }
+    if (appearance.themeSource !== undefined) {
+      setTerminalThemeSource(appearance.themeSource);
+    }
+  }, []);
+  const changeGhosttyAppearanceSource = useCallback(
+    (source: string) => {
+      try {
+        applyGhosttyAppearanceSource(source);
+        setError(null);
+      } catch (appearanceError) {
+        setError(
+          appearanceError instanceof Error
+            ? appearanceError.message
+            : "Ghostty config import failed",
+        );
+      }
+    },
+    [applyGhosttyAppearanceSource],
+  );
+  const importGhosttyConfig = useCallback(async () => {
+    if (!selectedRuntime) {
+      throw new Error("Select a connected bridge before importing Ghostty config");
+    }
+    const response = await fetchGhosttyConfig(selectedRuntime.httpUrl);
+    applyGhosttyAppearanceSource(response.source);
+    setError(null);
+  }, [applyGhosttyAppearanceSource, selectedRuntime]);
   const selectedWsUrl = useMemo(
     () => selectedRuntime?.wsUrl ?? disconnectedWsUrl,
     [selectedRuntime?.connectionKey],
@@ -4367,7 +4407,11 @@ export function App() {
           terminalFontFamily={terminalFontFamily}
           onTerminalFontFamily={setTerminalFontFamily}
           terminalThemeSource={terminalThemeSource}
-          onTerminalThemeSource={setTerminalThemeSource}
+          onTerminalThemeSource={changeGhosttyAppearanceSource}
+          ghosttyConfigImportAvailable={supportsGhosttyConfigImport(
+            selectedRuntime?.capabilities,
+          )}
+          onImportGhosttyConfig={importGhosttyConfig}
           terminalInputTransport={terminalInputTransport}
           onTerminalInputTransport={setTerminalInputTransport}
           terminalInputBatchDelayMs={terminalInputBatchDelayMs}

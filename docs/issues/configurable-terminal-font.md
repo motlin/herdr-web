@@ -3,4 +3,4 @@
 ## Body
 
 The renderer hard-codes a system monospace stack, so installed Nerd Font glyphs are unavailable.
-Add a persisted terminal font-family setting with the current stack as its default.
+Add a persisted font-family setting and import it from the local Ghostty config when available.

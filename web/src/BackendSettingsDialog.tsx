@@ -56,10 +56,7 @@ import type {
 } from "./mobileTerminalPrefs";
 import type { NavigationSyncMode } from "./navigationPrefs";
 import { trapFocusWithin, useFocusReturn } from "./overlayFocus";
-import {
-  DEFAULT_TERMINAL_THEME_SOURCE,
-  parseTerminalThemeSource,
-} from "./terminalTheme";
+import { DEFAULT_TERMINAL_THEME_SOURCE } from "./terminalTheme";
 import { TERMINAL_INPUT_BATCH_DELAY_OPTIONS_MS } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
 import { TERMINAL_OUTPUT_COALESCE_OPTIONS_MS } from "./terminalOutputCoalescing";
@@ -84,6 +81,8 @@ type Props = {
   onTerminalFontFamily: (value: string) => void;
   terminalThemeSource: string;
   onTerminalThemeSource: (value: string) => void;
+  ghosttyConfigImportAvailable: boolean;
+  onImportGhosttyConfig: () => Promise<void>;
   terminalInputTransport: TerminalInputTransport;
   onTerminalInputTransport: (transport: TerminalInputTransport) => void;
   terminalInputBatchDelayMs: number;
@@ -144,6 +143,8 @@ export function BackendSettingsDialog({
   onTerminalFontFamily,
   terminalThemeSource,
   onTerminalThemeSource,
+  ghosttyConfigImportAvailable,
+  onImportGhosttyConfig,
   terminalInputTransport,
   onTerminalInputTransport,
   terminalInputBatchDelayMs,
@@ -181,6 +182,10 @@ export function BackendSettingsDialog({
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [terminalConfigImportBusy, setTerminalConfigImportBusy] = useState(false);
+  const [terminalConfigImportMessage, setTerminalConfigImportMessage] = useState<string | null>(
+    null,
+  );
   const [duplicate, setDuplicate] = useState<BridgeBackendProfile | null>(null);
   const [activeArea, setActiveArea] = useState<SettingsArea>("bridge");
 
@@ -188,6 +193,21 @@ export function BackendSettingsDialog({
     () => bridge.store.backends.find((backend) => backend.id === form.id) ?? null,
     [bridge.store.backends, form.id],
   );
+
+  const importGhosttyConfig = async () => {
+    setTerminalConfigImportBusy(true);
+    setTerminalConfigImportMessage(null);
+    try {
+      await onImportGhosttyConfig();
+      setTerminalConfigImportMessage("Imported terminal appearance from Ghostty.");
+    } catch (importError) {
+      setTerminalConfigImportMessage(
+        importError instanceof Error ? importError.message : "Ghostty config import failed",
+      );
+    } finally {
+      setTerminalConfigImportBusy(false);
+    }
+  };
   const sameOriginEnabled = bridge.store.enabledBridgeIds.includes(SAME_ORIGIN_BRIDGE_ID);
 
   useEffect(() => {
@@ -700,6 +720,27 @@ export function BackendSettingsDialog({
               <div className="settings-section settings-section-flat">
                 <div className="settings-label">Terminal appearance</div>
                 <div className="settings-row">
+                  <span>Ghostty config</span>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!ghosttyConfigImportAvailable || terminalConfigImportBusy}
+                    onClick={() => void importGhosttyConfig()}
+                  >
+                    {terminalConfigImportBusy ? "Importing…" : "Import from bridge"}
+                  </button>
+                </div>
+                {terminalConfigImportMessage ? (
+                  <div className="settings-hint" role="status">
+                    {terminalConfigImportMessage}
+                  </div>
+                ) : null}
+                {!ghosttyConfigImportAvailable ? (
+                  <div className="settings-hint">
+                    The selected bridge does not support Ghostty config import.
+                  </div>
+                ) : null}
+                <div className="settings-row">
                   <span>Font size</span>
                   <NumberSettingControl
                     ariaLabel="Terminal font size"
@@ -721,17 +762,17 @@ export function BackendSettingsDialog({
                   />
                 </div>
                 <div className="settings-row settings-row-top">
-                  <span>Ghostty palette</span>
+                  <span>Ghostty config or palette</span>
                   <MultilineTextSettingControl
-                    ariaLabel="Ghostty terminal palette"
+                    ariaLabel="Ghostty terminal config or palette"
                     value={terminalThemeSource}
                     defaultValue={DEFAULT_TERMINAL_THEME_SOURCE}
-                    onChange={(value) => onTerminalThemeSource(parseTerminalThemeSource(value))}
+                    onChange={onTerminalThemeSource}
                   />
                 </div>
                 <div className="settings-hint">
-                  Paste color lines from a Ghostty theme file. Named theme references are not
-                  resolved by the browser.
+                  Paste a complete Ghostty config or color lines from a theme file. Font, size,
+                  and supported colors are applied together; named themes are not resolved.
                 </div>
                 <div className="settings-label">Accessibility</div>
                 <div className="settings-row">

@@ -3,4 +3,4 @@
 ## Body
 
 The web terminal always uses Catppuccin Mocha, so ANSI colors can differ from Ghostty.
-Add a persisted setting that accepts Ghostty theme color and palette lines.
+Import appearance from the local Ghostty config and accept a complete config when pasted.

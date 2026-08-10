@@ -110,6 +110,8 @@ function settingsProps() {
     onTerminalFontFamily: vi.fn(),
     terminalThemeSource: DEFAULT_TERMINAL_THEME_SOURCE,
     onTerminalThemeSource: vi.fn(),
+    ghosttyConfigImportAvailable: false,
+    onImportGhosttyConfig: vi.fn(),
     terminalInputTransport: "json" as const,
     onTerminalInputTransport: vi.fn(),
     terminalInputBatchDelayMs: 0,
