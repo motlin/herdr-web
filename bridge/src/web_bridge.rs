@@ -1367,16 +1367,20 @@ fn host_authority_allowed(authority: &str, policy: &RequestPolicy) -> bool {
         return true;
     }
 
-    if !authority_port_matches(authority, policy.bind_port) {
-        return false;
-    }
-
+    // An explicitly allow-listed hostname is operator-approved, so accept it whatever
+    // port the authority carries. A TLS-terminating proxy forwards the client's Host
+    // verbatim, which names the proxy's port or no port at all, never the bridge's.
+    // The hostname itself remains the rebinding guard.
     if policy
         .allowed_hosts
         .iter()
         .any(|allowed| host.eq_ignore_ascii_case(allowed))
     {
         return true;
+    }
+
+    if !authority_port_matches(authority, policy.bind_port) {
+        return false;
     }
 
     if is_unspecified_bind_host(&policy.bind_host) {
@@ -5673,7 +5677,7 @@ mod tests {
     }
 
     #[test]
-    fn host_gate_accepts_configured_hostname_only_on_bridge_port() {
+    fn host_gate_accepts_configured_hostname_on_any_authority_port() {
         let policy = RequestPolicy {
             bind_host: "0.0.0.0".to_string(),
             bind_port: 4000,
@@ -5683,8 +5687,47 @@ mod tests {
         };
         assert!(host_authority_allowed("herdr-host.local:4000", &policy));
         assert!(host_authority_allowed("HERDR-HOST.LOCAL:4000", &policy));
-        assert!(!host_authority_allowed("herdr-host.local:8787", &policy));
+        assert!(host_authority_allowed("herdr-host.local:8787", &policy));
         assert!(!host_authority_allowed("evil.example:4000", &policy));
+        assert!(!host_authority_allowed(
+            "herdr-host.local.evil.example:4000",
+            &policy
+        ));
+    }
+
+    #[test]
+    fn host_gate_accepts_configured_hostname_from_a_tls_terminating_proxy() {
+        let policy = RequestPolicy {
+            bind_host: "127.0.0.1".to_string(),
+            bind_port: 8788,
+            allowed_hosts: vec!["herdr.example.com".to_string()],
+            allowed_origins: Vec::new(),
+            allowed_connect_sources: Vec::new(),
+        };
+        // A proxy on 443 forwards the client's Host verbatim, so the authority
+        // carries no port at all.
+        assert!(host_authority_allowed("herdr.example.com", &policy));
+        assert!(host_authority_allowed("herdr.example.com:443", &policy));
+        assert!(!host_authority_allowed("evil.example", &policy));
+    }
+
+    #[test]
+    fn request_gate_allows_proxied_https_origin_without_extra_allow_origin() {
+        let policy = RequestPolicy {
+            bind_host: "127.0.0.1".to_string(),
+            bind_port: 8788,
+            allowed_hosts: vec!["herdr.example.com".to_string()],
+            allowed_origins: Vec::new(),
+            allowed_connect_sources: Vec::new(),
+        };
+        assert!(request_allowed(
+            &origin_headers("herdr.example.com", Some("https://herdr.example.com")),
+            &policy
+        ));
+        assert!(!request_allowed(
+            &origin_headers("herdr.example.com", Some("https://evil.example")),
+            &policy
+        ));
     }
 
     #[test]

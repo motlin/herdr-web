@@ -347,6 +347,43 @@ HOST=0.0.0.0 scripts/run-bridge.sh --allow-host host-a --allow-connect-origin ht
 HOST=0.0.0.0 scripts/run-bridge.sh --allow-host host-b --allow-origin http://host-a:8787
 ```
 
+## Behind A Reverse Proxy
+
+To terminate TLS in front of the bridge, keep the bridge on loopback and name the external
+hostname with `--allow-host`:
+
+```bash
+scripts/run-bridge.sh --allow-host herdr.example.com
+```
+
+The proxy forwards the client's `Host` header unchanged, so the bridge sees `herdr.example.com`
+rather than its own bind authority. That hostname is the request gate. `--allow-origin` is not
+needed, because the page origin and the forwarded `Host` already match, and `connect-src 'self'`
+covers the WebSocket upgrade to the same origin.
+
+Caddy:
+
+```caddyfile
+herdr.example.com {
+	reverse_proxy 127.0.0.1:8788
+}
+```
+
+nginx needs the upgrade headers spelled out:
+
+```nginx
+location / {
+	proxy_pass http://127.0.0.1:8788;
+	proxy_set_header Host $host;
+	proxy_set_header Upgrade $http_upgrade;
+	proxy_set_header Connection "upgrade";
+	proxy_http_version 1.1;
+}
+```
+
+The bridge has no user authentication, so anyone who can reach the proxy gets full terminal
+control. Keep it on a private network, a VPN, or behind proxy-level auth.
+
 ## Keyboard Shortcuts
 
 These app shortcuts are ignored while dialogs, menus, and normal text inputs are active. They still
