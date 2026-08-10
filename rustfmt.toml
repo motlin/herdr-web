@@ -1,0 +1,5 @@
+# Codifies the formatting the bridge already uses. Deliberately not the wider
+# house style (hard tabs, edition 2024): switching would rewrite every file in
+# bridge/ and vendor/ without changing behavior.
+edition = "2021"
+newline_style = "Unix"

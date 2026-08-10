@@ -6,7 +6,7 @@ and those changes are small. The implemented design streams those frequent activ
 bridge-owned deltas while retaining full snapshots for initial load, structural state, and recovery.
 
 This implementation was influenced by efficiency concepts from the `roy-levi-amazon` fork:
-https://github.com/roy-levi-amazon/herdr-web. The implemented design keeps the final subscription
+<https://github.com/roy-levi-amazon/herdr-web>. The implemented design keeps the final subscription
 ownership in the Herdr Web bridge and preserves full snapshots as the recovery path.
 
 ## Goals
