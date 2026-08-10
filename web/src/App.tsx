@@ -6139,7 +6139,7 @@ function Switcher({
   const [spaceOptionsMenu, setSpaceOptionsMenu] = useState<{ x: number; y: number } | null>(null);
   const [spaceDragTarget, setSpaceDragTarget] = useState<string | null | undefined>(undefined);
   const spaceDragRef = useRef<SpaceDragState | null>(null);
-  const spaceListRef = useRef<HTMLDivElement | null>(null);
+  const spaceListRef = useRef<HTMLElement | null>(null);
   const spaceRowRefs = useRef(new Map<string, HTMLDivElement>());
   const spaceReorderCardRef = useRef<HTMLButtonElement | null>(null);
   const selectedBridgeView = selectedBridgeId
@@ -7283,7 +7283,7 @@ function Switcher({
         </button>
       </div>
 
-      <div className="list" ref={spaceListRef}>
+      <div className="list">
         {!hasListSnapshot ? (
           <div className="empty">
             <strong>
@@ -7321,7 +7321,13 @@ function Switcher({
           <>
             {/* SPACES ---------------------------------------------------- */}
             {scope === "space" && hostBridgeViews.some((view) => view.snapshot) ? (
-            <section className="sec" data-sidebar-section="spaces">
+            <section
+              className="sec"
+              data-sidebar-section="spaces"
+              aria-label="Spaces"
+              tabIndex={0}
+              ref={spaceListRef}
+            >
               <div className="sec-head">
                 <span className="sec-label">spaces</span>
                 <span className="sec-rule" />
@@ -7403,7 +7409,18 @@ function Switcher({
             {/* PANES ----------------------------------------------------- */}
             {notesViewActive ||
             (hostScope === "all" ? hasListSnapshot : snapshot && snapshot.workspaces.length > 0) ? (
-            <section className="sec" data-sidebar-section="content">
+            <section
+              className="sec"
+              data-sidebar-section="content"
+              aria-label={
+                sidebarView === "agents"
+                  ? "Agents"
+                  : sidebarView === "tabs"
+                    ? "Tabs"
+                    : "Notes"
+              }
+              tabIndex={0}
+            >
               <div className="sec-head">
                 <span className="sec-label">
                   {sidebarView === "agents"

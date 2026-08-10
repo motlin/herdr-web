@@ -192,6 +192,8 @@ Settings are grouped by area:
 
 When viewing all of multiple hosts, use the Spaces list `…` menu to group spaces by host or keep a
 flat list with host context in each row. The menu stays hidden in single-host scope.
+In Space scope, Spaces and the selected Agents, Tabs, or Notes view use independent scroll panes,
+matching Herdr's two-pane sidebar navigation.
 
 Multi-host Space selection is enabled by default, retaining one active Space per host in
 Space-scoped views. Turn it off under Settings → Display to keep only the selected host's Space,

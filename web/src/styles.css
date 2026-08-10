@@ -1,7 +1,7 @@
 /* ========================================================================
    herdr-web - Catppuccin Mocha, Geist UI with system terminal mono
-   A compact "command deck" for your agents: one scrollable column of
-   scoped sections (spaces -> panes), terminal on the side / in front.
+   A compact "command deck" for your agents: independently scrolling
+   spaces and content sections, terminal on the side / in front.
    ======================================================================== */
 
 :root {
@@ -422,24 +422,58 @@ button {
   flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
+  overflow: hidden;
+  padding: 4px 0 8px;
+}
+
+.list > .sec {
+  min-height: 0;
   overflow-y: auto;
-  padding: 4px 8px 16px;
+  padding: 0 8px 8px;
+  outline: none;
   scrollbar-width: thin;
   scrollbar-color: var(--surface1) transparent;
 }
 
-.list::-webkit-scrollbar {
+.list > [data-sidebar-section="spaces"] {
+  flex: 2 1 40%;
+  min-height: 96px;
+  border-bottom: 1px solid var(--line);
+}
+
+.list > [data-sidebar-section="content"] {
+  flex: 3 1 60%;
+  min-height: 96px;
+}
+
+.list > .sec:only-child {
+  flex: 1 1 auto;
+}
+
+.list > .sec:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.list > .empty {
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+
+.list > .sec::-webkit-scrollbar,
+.list > .empty::-webkit-scrollbar {
   width: 9px;
 }
 
-.list::-webkit-scrollbar-thumb {
+.list > .sec::-webkit-scrollbar-thumb,
+.list > .empty::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
   background: var(--surface1);
   background-clip: content-box;
 }
 
-.list::-webkit-scrollbar-thumb:hover {
+.list > .sec::-webkit-scrollbar-thumb:hover,
+.list > .empty::-webkit-scrollbar-thumb:hover {
   background: var(--surface2);
   background-clip: content-box;
 }
@@ -450,11 +484,15 @@ button {
 }
 
 .sec-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   height: 30px;
   padding: 0 8px 0 10px;
+  background: var(--sidebar-bg);
 }
 
 .sec-label {

@@ -54,6 +54,8 @@
   [PR #57](https://github.com/kcosr/herdr-web/pull/57), based on work proposed by
   [Hopkins (@LosEcher)](https://github.com/LosEcher) in
   [PR #51](https://github.com/kcosr/herdr-web/pull/51).
+- Split the Space-scoped sidebar into independently scrolling Spaces and content panes with sticky
+  section headers.
 
 ### Fixed
 
