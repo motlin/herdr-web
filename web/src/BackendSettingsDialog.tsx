@@ -56,6 +56,10 @@ import type {
 } from "./mobileTerminalPrefs";
 import type { NavigationSyncMode } from "./navigationPrefs";
 import { trapFocusWithin, useFocusReturn } from "./overlayFocus";
+import {
+  DEFAULT_TERMINAL_THEME_SOURCE,
+  parseTerminalThemeSource,
+} from "./terminalTheme";
 import { TERMINAL_INPUT_BATCH_DELAY_OPTIONS_MS } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
 import { TERMINAL_OUTPUT_COALESCE_OPTIONS_MS } from "./terminalOutputCoalescing";
@@ -78,6 +82,8 @@ type Props = {
   onTerminalScreenReaderText: (enabled: boolean) => void;
   terminalFontFamily: string;
   onTerminalFontFamily: (value: string) => void;
+  terminalThemeSource: string;
+  onTerminalThemeSource: (value: string) => void;
   terminalInputTransport: TerminalInputTransport;
   onTerminalInputTransport: (transport: TerminalInputTransport) => void;
   terminalInputBatchDelayMs: number;
@@ -136,6 +142,8 @@ export function BackendSettingsDialog({
   onTerminalScreenReaderText,
   terminalFontFamily,
   onTerminalFontFamily,
+  terminalThemeSource,
+  onTerminalThemeSource,
   terminalInputTransport,
   onTerminalInputTransport,
   terminalInputBatchDelayMs,
@@ -712,6 +720,19 @@ export function BackendSettingsDialog({
                     onChange={(value) => onTerminalFontFamily(parseTerminalFontFamily(value))}
                   />
                 </div>
+                <div className="settings-row settings-row-top">
+                  <span>Ghostty palette</span>
+                  <MultilineTextSettingControl
+                    ariaLabel="Ghostty terminal palette"
+                    value={terminalThemeSource}
+                    defaultValue={DEFAULT_TERMINAL_THEME_SOURCE}
+                    onChange={(value) => onTerminalThemeSource(parseTerminalThemeSource(value))}
+                  />
+                </div>
+                <div className="settings-hint">
+                  Paste color lines from a Ghostty theme file. Named theme references are not
+                  resolved by the browser.
+                </div>
                 <div className="settings-label">Accessibility</div>
                 <div className="settings-row">
                   <span title="Expose the visible terminal contents as screen-reader text; may add processing during heavy output">
@@ -1226,6 +1247,62 @@ function TextSettingControl({
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancelBlurCommitRef.current = true;
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <ResetSettingButton
+        disabled={value === defaultValue}
+        label={`Reset ${ariaLabel.toLowerCase()}`}
+        onClick={() => onChange(defaultValue)}
+      />
+    </div>
+  );
+}
+
+function MultilineTextSettingControl({
+  ariaLabel,
+  value,
+  defaultValue,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  defaultValue: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const cancelBlurCommitRef = useRef(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (cancelBlurCommitRef.current) {
+      cancelBlurCommitRef.current = false;
+      return;
+    }
+    onChange(draft);
+  };
+
+  return (
+    <div className="settings-textarea-control">
+      <textarea
+        className="settings-textarea-field mono"
+        value={draft}
+        aria-label={ariaLabel}
+        rows={8}
+        spellCheck={false}
+        autoCapitalize="none"
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             event.currentTarget.blur();
           } else if (event.key === "Escape") {

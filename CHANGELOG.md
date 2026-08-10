@@ -44,6 +44,8 @@
   [Craig P. Motlin (@motlin)](https://github.com/motlin).
 - Added a persisted terminal font-family setting so browsers can use installed Nerd Fonts and
   custom CSS fallback stacks.
+- Added a terminal palette setting that imports Ghostty theme color lines for exact ANSI color
+  matching.
 
 ### Changed
 

@@ -1,4 +1,4 @@
-import type { FitAddon, Terminal } from "ghostty-web";
+import type { FitAddon, ITheme, Terminal } from "ghostty-web";
 import {
   findFirstUrlInSelection,
   terminalSelectionRange,
@@ -46,6 +46,7 @@ import {
 } from "./terminalImeInput";
 import type { TerminalImeState } from "./terminalImeInput";
 import { installTerminalImeFocusRedirect } from "./terminalImeFocus";
+import { DEFAULT_TERMINAL_THEME } from "./terminalTheme";
 const TERMINAL_TEXT_INPUT_TAP_GRACE_MS = 4000;
 const TOUCH_SELECTION_LONG_PRESS_MS = 600;
 const TOUCH_SELECTION_TOLERANCE_PX = 10;
@@ -140,6 +141,7 @@ export type TerminalRenderer = {
   refreshMetrics(): TerminalSize;
   setFontFamily(fontFamily: string): TerminalSize | null;
   setFontSize(fontSizePx: number): TerminalSize | null;
+  setTheme(theme: ITheme): void;
   focus(): void;
   focusTextInput(): void;
   clearSelection(): void;
@@ -167,14 +169,17 @@ export class GhosttyRenderer implements TerminalRenderer {
   #textInputTapGraceUntil = 0;
   #fontFamily: string;
   #fontSizePx: number;
+  #theme: ITheme;
   #disposed = false;
 
   constructor(
     fontSizePx = DEFAULT_TERMINAL_FONT_SIZE_PX,
     fontFamily = DEFAULT_TERMINAL_FONT_FAMILY,
+    theme = DEFAULT_TERMINAL_THEME,
   ) {
     this.#fontSizePx = fontSizePx;
     this.#fontFamily = fontFamily;
+    this.#theme = theme;
   }
 
   async mount(container: HTMLElement) {
@@ -191,28 +196,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       fontSize: this.#fontSizePx,
       scrollback: 8000,
       smoothScrollDuration: 0,
-      theme: {
-        background: "#11111b",
-        foreground: "#cdd6f4",
-        cursor: "#f5e0dc",
-        selectionBackground: "#45475a",
-        black: "#45475a",
-        red: "#f38ba8",
-        green: "#a6e3a1",
-        yellow: "#f9e2af",
-        blue: "#89b4fa",
-        magenta: "#f5c2e7",
-        cyan: "#94e2d5",
-        white: "#bac2de",
-        brightBlack: "#585b70",
-        brightRed: "#f38ba8",
-        brightGreen: "#a6e3a1",
-        brightYellow: "#f9e2af",
-        brightBlue: "#89b4fa",
-        brightMagenta: "#f5c2e7",
-        brightCyan: "#94e2d5",
-        brightWhite: "#a6adc8",
-      },
+      theme: this.#theme,
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -334,6 +318,13 @@ export class GhosttyRenderer implements TerminalRenderer {
       return null;
     }
     return this.refreshMetrics();
+  }
+
+  setTheme(theme: ITheme) {
+    this.#theme = theme;
+    if (this.#terminal) {
+      this.#terminal.options.theme = theme;
+    }
   }
 
   focus() {

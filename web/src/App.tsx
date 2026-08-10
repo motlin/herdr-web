@@ -22,6 +22,7 @@ import {
   Unlink,
   X,
 } from "lucide-react";
+import type { ITheme } from "ghostty-web";
 import {
   Fragment,
   Suspense,
@@ -163,6 +164,11 @@ import {
   parseTerminalFontFamily,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
+import {
+  DEFAULT_TERMINAL_THEME_SOURCE,
+  parseTerminalThemeSource,
+  terminalThemeFromGhosttySource,
+} from "./terminalTheme";
 import {
   aggregateStatus,
   basename,
@@ -416,6 +422,7 @@ type DisplayPrefs = {
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
   terminalFontFamily: string;
+  terminalThemeSource: string;
   terminalInputTransport: TerminalInputTransport;
   terminalInputBatchDelayMs: number;
   terminalOutputCoalesceMs: number;
@@ -481,6 +488,7 @@ function readDisplayPrefs(): DisplayPrefs {
     terminalFontSizePx: DEFAULT_TERMINAL_FONT_SIZE_PX,
     terminalScreenReaderText: DEFAULT_TERMINAL_SCREEN_READER_TEXT,
     terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminalThemeSource: DEFAULT_TERMINAL_THEME_SOURCE,
     terminalInputTransport: DEFAULT_TERMINAL_INPUT_TRANSPORT,
     terminalInputBatchDelayMs: DEFAULT_TERMINAL_INPUT_BATCH_DELAY_MS,
     terminalOutputCoalesceMs: DEFAULT_TERMINAL_OUTPUT_COALESCE_MS,
@@ -681,6 +689,7 @@ function parseDisplayPrefsValue(
       fallback.terminalScreenReaderText,
     ),
     terminalFontFamily: parseTerminalFontFamily(parsed.terminalFontFamily),
+    terminalThemeSource: parseTerminalThemeSource(parsed.terminalThemeSource),
     terminalInputTransport: parseTerminalInputTransport(parsed.terminalInputTransport),
     terminalInputBatchDelayMs: parseTerminalInputBatchDelayMs(parsed.terminalInputBatchDelayMs),
     terminalOutputCoalesceMs: parseTerminalOutputCoalesceMs(
@@ -1062,6 +1071,13 @@ export function App() {
   const [terminalFontFamily, setTerminalFontFamily] = useState(
     initialPrefs.terminalFontFamily,
   );
+  const [terminalThemeSource, setTerminalThemeSource] = useState(
+    initialPrefs.terminalThemeSource,
+  );
+  const terminalTheme = useMemo(
+    () => terminalThemeFromGhosttySource(terminalThemeSource),
+    [terminalThemeSource],
+  );
   const [terminalInputTransport, setTerminalInputTransport] = useState(
     initialPrefs.terminalInputTransport,
   );
@@ -1191,6 +1207,7 @@ export function App() {
       setTerminalFontSizePx(prefs.terminalFontSizePx);
       setTerminalScreenReaderText(prefs.terminalScreenReaderText);
       setTerminalFontFamily(prefs.terminalFontFamily);
+      setTerminalThemeSource(prefs.terminalThemeSource);
       setTerminalInputTransport(prefs.terminalInputTransport);
       setTerminalInputBatchDelayMs(prefs.terminalInputBatchDelayMs);
       setTerminalOutputCoalesceMs(prefs.terminalOutputCoalesceMs);
@@ -1735,6 +1752,7 @@ export function App() {
       terminalFontSizePx,
       terminalScreenReaderText,
       terminalFontFamily,
+      terminalThemeSource,
       terminalInputTransport,
       terminalInputBatchDelayMs,
       terminalOutputCoalesceMs,
@@ -1772,6 +1790,7 @@ export function App() {
     terminalFontSizePx,
     terminalScreenReaderText,
     terminalFontFamily,
+    terminalThemeSource,
     terminalInputTransport,
     terminalInputBatchDelayMs,
     terminalOutputCoalesceMs,
@@ -4078,6 +4097,7 @@ export function App() {
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
             terminalFontFamily={terminalFontFamily}
+            terminalTheme={terminalTheme}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4105,6 +4125,7 @@ export function App() {
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
             terminalFontFamily={terminalFontFamily}
+            terminalTheme={terminalTheme}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4345,6 +4366,8 @@ export function App() {
           onTerminalScreenReaderText={setTerminalScreenReaderText}
           terminalFontFamily={terminalFontFamily}
           onTerminalFontFamily={setTerminalFontFamily}
+          terminalThemeSource={terminalThemeSource}
+          onTerminalThemeSource={setTerminalThemeSource}
           terminalInputTransport={terminalInputTransport}
           onTerminalInputTransport={setTerminalInputTransport}
           terminalInputBatchDelayMs={terminalInputBatchDelayMs}
@@ -5811,6 +5834,7 @@ function SplitGrid({
   terminalFontSizePx,
   terminalScreenReaderText,
   terminalFontFamily,
+  terminalTheme,
   mobileControlsScalePercent,
   mobileTapTarget,
   mobileLongPressBehavior,
@@ -5834,6 +5858,7 @@ function SplitGrid({
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
   terminalFontFamily: string;
+  terminalTheme: ITheme;
   mobileControlsScalePercent: number;
   mobileTapTarget: MobileTerminalTapTarget;
   mobileLongPressBehavior: MobileLongPressBehavior;
@@ -5873,6 +5898,7 @@ function SplitGrid({
               terminalFontSizePx={terminalFontSizePx}
               terminalScreenReaderText={terminalScreenReaderText}
               terminalFontFamily={terminalFontFamily}
+              terminalTheme={terminalTheme}
               mobileControlsScalePercent={mobileControlsScalePercent}
               mobileTapTarget={mobileTapTarget}
               mobileLongPressBehavior={mobileLongPressBehavior}

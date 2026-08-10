@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendSettingsDialog } from "./BackendSettingsDialog";
 import { DEFAULT_TERMINAL_FONT_FAMILY } from "./terminalPrefs";
+import { DEFAULT_TERMINAL_THEME_SOURCE } from "./terminalTheme";
 
 const bridge = vi.hoisted(() => ({
   store: {
@@ -107,6 +108,8 @@ function settingsProps() {
     onTerminalScreenReaderText: vi.fn(),
     terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
     onTerminalFontFamily: vi.fn(),
+    terminalThemeSource: DEFAULT_TERMINAL_THEME_SOURCE,
+    onTerminalThemeSource: vi.fn(),
     terminalInputTransport: "json" as const,
     onTerminalInputTransport: vi.fn(),
     terminalInputBatchDelayMs: 0,
