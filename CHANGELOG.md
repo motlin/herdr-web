@@ -67,6 +67,8 @@
   removed the per-icon transform that compensated for it.
   [PR #55](https://github.com/kcosr/herdr-web/pull/55), contributed by
   [Philippe SEGATORI (@tigitz)](https://github.com/tigitz).
+- Added Command-click and Control-click URL opening while terminal applications have mouse tracking
+  enabled, without forwarding the overridden click to the application.
 
 ## [0.4.1] - 2026-08-05
 

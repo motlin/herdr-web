@@ -927,11 +927,23 @@ export class GhosttyRenderer implements TerminalRenderer {
     };
     const mouseLinkText = (event: MouseEvent) => {
       const mouseTracking = this.#hasMouseTracking(terminal);
-      if (mouseTracking) {
+      const mouseTrackingOverride = event.metaKey || event.ctrlKey;
+      if (mouseTracking && !mouseTrackingOverride) {
         return null;
       }
       const position = touchCellPosition(terminal, event.clientX, event.clientY);
-      return terminalUrlTapTarget(terminalLinkAt(terminal, position), mouseTracking);
+      return terminalUrlTapTarget(
+        terminalLinkAt(terminal, position),
+        mouseTracking,
+        mouseTrackingOverride,
+      );
+    };
+    const suppressTerminalMouseEvent = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
     };
     const redirectTapFocus = (event: TouchEvent | MouseEvent) => {
       const terminalHadFocusOrGrace =
@@ -1128,6 +1140,9 @@ export class GhosttyRenderer implements TerminalRenderer {
       mouseDownX = event.clientX;
       mouseDownY = event.clientY;
       if (this.#hasMouseTracking(terminal)) {
+        if (event.button === 0 && mouseLinkText(event)) {
+          suppressTerminalMouseEvent(event);
+        }
         return;
       }
       if (suppressCompatMouseEvent(event)) {
@@ -1138,6 +1153,10 @@ export class GhosttyRenderer implements TerminalRenderer {
       }
     };
     const onMouseUp = (event: MouseEvent) => {
+      if (event.button === 0 && this.#hasMouseTracking(terminal) && mouseLinkText(event)) {
+        suppressTerminalMouseEvent(event);
+        return;
+      }
       suppressCompatMouseEvent(event);
     };
     const onClick = (event: MouseEvent) => {
@@ -1158,11 +1177,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       if (!linkText?.trim()) {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof event.stopImmediatePropagation === "function") {
-        event.stopImmediatePropagation();
-      }
+      suppressTerminalMouseEvent(event);
       terminal.textarea?.blur();
       window.open(linkText, "_blank", "noopener,noreferrer");
     };

@@ -66,8 +66,12 @@ export function openableHttpUrl(value: string) {
   }
 }
 
-export function terminalUrlTapTarget(value: string | null, mouseTracking: boolean) {
-  if (mouseTracking || !value) {
+export function terminalUrlTapTarget(
+  value: string | null,
+  mouseTracking: boolean,
+  mouseTrackingOverride = false,
+) {
+  if ((mouseTracking && !mouseTrackingOverride) || !value) {
     return null;
   }
   return openableHttpUrl(value);

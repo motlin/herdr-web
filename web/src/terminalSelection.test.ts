@@ -58,11 +58,14 @@ describe("terminal selection helpers", () => {
     expect(openableHttpUrl("tel:+15555555555")).toBeNull();
   });
 
-  it("opens tapped terminal URLs only when mouse tracking is inactive", () => {
+  it("opens terminal URLs outside mouse tracking or with an explicit override", () => {
     expect(terminalUrlTapTarget("https://example.com/path", false)).toBe(
       "https://example.com/path",
     );
     expect(terminalUrlTapTarget("https://example.com/path", true)).toBeNull();
+    expect(terminalUrlTapTarget("https://example.com/path", true, true)).toBe(
+      "https://example.com/path",
+    );
     expect(terminalUrlTapTarget("mailto:test@example.com", false)).toBeNull();
     expect(terminalUrlTapTarget(null, false)).toBeNull();
   });

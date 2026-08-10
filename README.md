@@ -201,6 +201,8 @@ Terminal input payloads can be sent as JSON or binary WebSocket frames. JSON rem
 binary is available for comparing terminal input performance. Terminal input batching is off by
 default. When enabled, short input chunks are coalesced for `32`, `64`, `128`, or `256` ms and are
 flushed early once the pending UTF-8 input reaches 32 bytes, so paste-like input bypasses the delay.
+Use Command-click on macOS or Control-click elsewhere to open a terminal URL while its application
+has mouse tracking enabled.
 
 Terminal screen-reader text is off by default. Enable it under Settings → Terminal to expose each
 visible terminal viewport as bounded plain text for assistive technology. The mirror follows output,
