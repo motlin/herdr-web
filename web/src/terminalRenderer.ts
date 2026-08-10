@@ -30,7 +30,10 @@ import type {
   MobileLongPressBehavior,
   MobileTouchSelectionEndpointTimeoutMs,
 } from "./mobileTerminalPrefs";
-import { DEFAULT_TERMINAL_FONT_SIZE_PX } from "./terminalPrefs";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_SIZE_PX,
+} from "./terminalPrefs";
 import {
   beforeInputOutput,
   idleTerminalImeState,
@@ -43,9 +46,6 @@ import {
 } from "./terminalImeInput";
 import type { TerminalImeState } from "./terminalImeInput";
 import { installTerminalImeFocusRedirect } from "./terminalImeFocus";
-
-const TERMINAL_FONT_FAMILY =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace';
 const TERMINAL_TEXT_INPUT_TAP_GRACE_MS = 4000;
 const TOUCH_SELECTION_LONG_PRESS_MS = 600;
 const TOUCH_SELECTION_TOLERANCE_PX = 10;
@@ -138,6 +138,7 @@ export type TerminalRenderer = {
   ): void;
   fit(): TerminalSize;
   refreshMetrics(): TerminalSize;
+  setFontFamily(fontFamily: string): TerminalSize | null;
   setFontSize(fontSizePx: number): TerminalSize | null;
   focus(): void;
   focusTextInput(): void;
@@ -164,11 +165,16 @@ export class GhosttyRenderer implements TerminalRenderer {
   #mobileTouchSelectionEndpointTimeoutMs: MobileTouchSelectionEndpointTimeoutMs =
     DEFAULT_MOBILE_TOUCH_SELECTION_ENDPOINT_TIMEOUT_MS;
   #textInputTapGraceUntil = 0;
+  #fontFamily: string;
   #fontSizePx: number;
   #disposed = false;
 
-  constructor(fontSizePx = DEFAULT_TERMINAL_FONT_SIZE_PX) {
+  constructor(
+    fontSizePx = DEFAULT_TERMINAL_FONT_SIZE_PX,
+    fontFamily = DEFAULT_TERMINAL_FONT_FAMILY,
+  ) {
     this.#fontSizePx = fontSizePx;
+    this.#fontFamily = fontFamily;
   }
 
   async mount(container: HTMLElement) {
@@ -181,7 +187,7 @@ export class GhosttyRenderer implements TerminalRenderer {
     const terminal = new Terminal({
       convertEol: false,
       cursorBlink: true,
-      fontFamily: TERMINAL_FONT_FAMILY,
+      fontFamily: this.#fontFamily,
       fontSize: this.#fontSizePx,
       scrollback: 8000,
       smoothScrollDuration: 0,
@@ -308,7 +314,7 @@ export class GhosttyRenderer implements TerminalRenderer {
 
   refreshMetrics() {
     const terminal = this.#requireTerminal();
-    terminal.options.fontFamily = TERMINAL_FONT_FAMILY;
+    terminal.options.fontFamily = this.#fontFamily;
     terminal.options.fontSize = this.#fontSizePx;
     terminal.renderer?.remeasureFont();
     return this.fit();
@@ -316,6 +322,14 @@ export class GhosttyRenderer implements TerminalRenderer {
 
   setFontSize(fontSizePx: number) {
     this.#fontSizePx = fontSizePx;
+    if (!this.#terminal) {
+      return null;
+    }
+    return this.refreshMetrics();
+  }
+
+  setFontFamily(fontFamily: string) {
+    this.#fontFamily = fontFamily;
     if (!this.#terminal) {
       return null;
     }
@@ -1505,7 +1519,7 @@ function positionGhosttyTextareaForInput(
   textarea.style.background = "transparent";
   textarea.style.caretColor = "transparent";
   textarea.style.overflow = "hidden";
-  textarea.style.fontFamily = TERMINAL_FONT_FAMILY;
+  textarea.style.fontFamily = terminal.options.fontFamily ?? DEFAULT_TERMINAL_FONT_FAMILY;
   textarea.style.fontSize = `${anchor.fontSizePx}px`;
   textarea.style.lineHeight = `${anchor.height}px`;
   textarea.style.zIndex = "5";
@@ -1542,7 +1556,7 @@ function updateImePreeditOverlay(
   overlay.style.left = `${anchorLeft}px`;
   overlay.style.top = `${anchorTop}px`;
   overlay.style.maxWidth = `${maxWidth}px`;
-  overlay.style.fontFamily = TERMINAL_FONT_FAMILY;
+  overlay.style.fontFamily = terminal.options.fontFamily ?? DEFAULT_TERMINAL_FONT_FAMILY;
   overlay.style.fontSize = `${fontSize}px`;
   overlay.style.lineHeight = lineHeight;
   overlay.style.minHeight = lineHeight;

@@ -2770,6 +2770,32 @@ button {
   justify-self: end;
 }
 
+.settings-text-control {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) 30px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-text-field {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--surface1);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  background: var(--crust);
+  font-size: 12px;
+  outline: none;
+}
+
+.settings-text-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
 .settings-slider-control {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) auto;
@@ -3198,7 +3224,8 @@ button {
   }
 
   .settings-value-control,
-  .settings-slider-control {
+  .settings-slider-control,
+  .settings-text-control {
     justify-self: stretch;
     width: 100%;
   }

@@ -35,7 +35,10 @@ import {
 } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
 import { DEFAULT_TERMINAL_OUTPUT_COALESCE_MS } from "./terminalOutputCoalescing";
-import { DEFAULT_TERMINAL_FONT_SIZE_PX } from "./terminalPrefs";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_SIZE_PX,
+} from "./terminalPrefs";
 import {
   TERMINAL_FOREGROUND_FAST_ATTEMPTS,
   TERMINAL_FOREGROUND_CONNECT_TIMEOUT_MS,
@@ -65,6 +68,8 @@ type Props = {
   mobileControls?: boolean;
   /** Terminal renderer font size in CSS pixels. */
   terminalFontSizePx?: number;
+  /** CSS font-family stack used by the terminal renderer. */
+  terminalFontFamily?: string;
   /** Percentage scale applied to mobile terminal controls. */
   mobileControlsScalePercent?: number;
   /** Where terminal taps should send focus on mobile. */
@@ -143,6 +148,7 @@ export function TerminalView({
   scrollSensitivity = 1,
   mobileControls = false,
   terminalFontSizePx = DEFAULT_TERMINAL_FONT_SIZE_PX,
+  terminalFontFamily = DEFAULT_TERMINAL_FONT_FAMILY,
   mobileControlsScalePercent = 100,
   mobileTapTarget = "command-input",
   mobileLongPressBehavior = "off",
@@ -202,6 +208,8 @@ export function TerminalView({
   mobileControlsRef.current = mobileControls;
   const terminalFontSizePxRef = useRef(terminalFontSizePx);
   terminalFontSizePxRef.current = terminalFontSizePx;
+  const terminalFontFamilyRef = useRef(terminalFontFamily);
+  terminalFontFamilyRef.current = terminalFontFamily;
   const mobileTapTargetRef = useRef(mobileTapTarget);
   mobileTapTargetRef.current = mobileTapTarget;
   const mobileLongPressBehaviorRef = useRef(mobileLongPressBehavior);
@@ -491,7 +499,10 @@ export function TerminalView({
     let resizeObserver: ResizeObserver | null = null;
     const generation = rendererGenerationRef.current + 1;
     rendererGenerationRef.current = generation;
-    const renderer: TerminalRenderer = new GhosttyRenderer(terminalFontSizePxRef.current);
+    const renderer: TerminalRenderer = new GhosttyRenderer(
+      terminalFontSizePxRef.current,
+      terminalFontFamilyRef.current,
+    );
     rendererRef.current = renderer;
     setConnectionState("connecting");
 
@@ -1101,6 +1112,13 @@ export function TerminalView({
       sendResizeRef.current(size);
     }
   }, [terminalFontSizePx]);
+
+  useEffect(() => {
+    const size = rendererRef.current?.setFontFamily(terminalFontFamily);
+    if (size) {
+      sendResizeRef.current(size);
+    }
+  }, [terminalFontFamily]);
 
   useEffect(() => {
     setMobileSelectionAction(null);

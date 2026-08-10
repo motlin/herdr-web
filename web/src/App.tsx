@@ -158,7 +158,9 @@ import {
   parseTerminalOutputCoalesceMs,
 } from "./terminalOutputCoalescing";
 import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
+  parseTerminalFontFamily,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
 import {
@@ -413,6 +415,7 @@ type DisplayPrefs = {
   sidebarOpen: boolean;
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
+  terminalFontFamily: string;
   terminalInputTransport: TerminalInputTransport;
   terminalInputBatchDelayMs: number;
   terminalOutputCoalesceMs: number;
@@ -477,6 +480,7 @@ function readDisplayPrefs(): DisplayPrefs {
     sidebarOpen: true,
     terminalFontSizePx: DEFAULT_TERMINAL_FONT_SIZE_PX,
     terminalScreenReaderText: DEFAULT_TERMINAL_SCREEN_READER_TEXT,
+    terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
     terminalInputTransport: DEFAULT_TERMINAL_INPUT_TRANSPORT,
     terminalInputBatchDelayMs: DEFAULT_TERMINAL_INPUT_BATCH_DELAY_MS,
     terminalOutputCoalesceMs: DEFAULT_TERMINAL_OUTPUT_COALESCE_MS,
@@ -676,6 +680,7 @@ function parseDisplayPrefsValue(
       parsed.terminalScreenReaderText,
       fallback.terminalScreenReaderText,
     ),
+    terminalFontFamily: parseTerminalFontFamily(parsed.terminalFontFamily),
     terminalInputTransport: parseTerminalInputTransport(parsed.terminalInputTransport),
     terminalInputBatchDelayMs: parseTerminalInputBatchDelayMs(parsed.terminalInputBatchDelayMs),
     terminalOutputCoalesceMs: parseTerminalOutputCoalesceMs(
@@ -1054,6 +1059,9 @@ export function App() {
   const [terminalScreenReaderText, setTerminalScreenReaderText] = useState(
     initialPrefs.terminalScreenReaderText,
   );
+  const [terminalFontFamily, setTerminalFontFamily] = useState(
+    initialPrefs.terminalFontFamily,
+  );
   const [terminalInputTransport, setTerminalInputTransport] = useState(
     initialPrefs.terminalInputTransport,
   );
@@ -1182,6 +1190,7 @@ export function App() {
       setActiveWorkspacesByBridgeId(sharedNavigationPrefs.activeWorkspacesByBridgeId);
       setTerminalFontSizePx(prefs.terminalFontSizePx);
       setTerminalScreenReaderText(prefs.terminalScreenReaderText);
+      setTerminalFontFamily(prefs.terminalFontFamily);
       setTerminalInputTransport(prefs.terminalInputTransport);
       setTerminalInputBatchDelayMs(prefs.terminalInputBatchDelayMs);
       setTerminalOutputCoalesceMs(prefs.terminalOutputCoalesceMs);
@@ -1725,6 +1734,7 @@ export function App() {
       sidebarOpen,
       terminalFontSizePx,
       terminalScreenReaderText,
+      terminalFontFamily,
       terminalInputTransport,
       terminalInputBatchDelayMs,
       terminalOutputCoalesceMs,
@@ -1761,6 +1771,7 @@ export function App() {
     sidebarOpen,
     terminalFontSizePx,
     terminalScreenReaderText,
+    terminalFontFamily,
     terminalInputTransport,
     terminalInputBatchDelayMs,
     terminalOutputCoalesceMs,
@@ -4066,6 +4077,7 @@ export function App() {
             touchInput={isTouchInput}
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
+            terminalFontFamily={terminalFontFamily}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4092,6 +4104,7 @@ export function App() {
             mobileControls={isTouchInput}
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
+            terminalFontFamily={terminalFontFamily}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4330,6 +4343,8 @@ export function App() {
           onTerminalFontSizePx={setTerminalFontSizePx}
           terminalScreenReaderText={terminalScreenReaderText}
           onTerminalScreenReaderText={setTerminalScreenReaderText}
+          terminalFontFamily={terminalFontFamily}
+          onTerminalFontFamily={setTerminalFontFamily}
           terminalInputTransport={terminalInputTransport}
           onTerminalInputTransport={setTerminalInputTransport}
           terminalInputBatchDelayMs={terminalInputBatchDelayMs}
@@ -5795,6 +5810,7 @@ function SplitGrid({
   touchInput,
   terminalFontSizePx,
   terminalScreenReaderText,
+  terminalFontFamily,
   mobileControlsScalePercent,
   mobileTapTarget,
   mobileLongPressBehavior,
@@ -5817,6 +5833,7 @@ function SplitGrid({
   touchInput: boolean;
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
+  terminalFontFamily: string;
   mobileControlsScalePercent: number;
   mobileTapTarget: MobileTerminalTapTarget;
   mobileLongPressBehavior: MobileLongPressBehavior;
@@ -5855,6 +5872,7 @@ function SplitGrid({
               mobileControls={selected && touchInput}
               terminalFontSizePx={terminalFontSizePx}
               terminalScreenReaderText={terminalScreenReaderText}
+              terminalFontFamily={terminalFontFamily}
               mobileControlsScalePercent={mobileControlsScalePercent}
               mobileTapTarget={mobileTapTarget}
               mobileLongPressBehavior={mobileLongPressBehavior}

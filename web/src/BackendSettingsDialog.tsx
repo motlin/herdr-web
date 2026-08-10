@@ -39,9 +39,11 @@ import {
   parseMobileControlsScalePercent,
 } from "./displayPrefs";
 import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
   MAX_TERMINAL_FONT_SIZE_PX,
   MIN_TERMINAL_FONT_SIZE_PX,
+  parseTerminalFontFamily,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
 import {
@@ -74,6 +76,8 @@ type Props = {
   onTerminalFontSizePx: (value: number) => void;
   terminalScreenReaderText: boolean;
   onTerminalScreenReaderText: (enabled: boolean) => void;
+  terminalFontFamily: string;
+  onTerminalFontFamily: (value: string) => void;
   terminalInputTransport: TerminalInputTransport;
   onTerminalInputTransport: (transport: TerminalInputTransport) => void;
   terminalInputBatchDelayMs: number;
@@ -130,6 +134,8 @@ export function BackendSettingsDialog({
   onTerminalFontSizePx,
   terminalScreenReaderText,
   onTerminalScreenReaderText,
+  terminalFontFamily,
+  onTerminalFontFamily,
   terminalInputTransport,
   onTerminalInputTransport,
   terminalInputBatchDelayMs,
@@ -697,6 +703,15 @@ export function BackendSettingsDialog({
                     onChange={(value) => onTerminalFontSizePx(parseTerminalFontSizePx(value))}
                   />
                 </div>
+                <div className="settings-row">
+                  <span>Font family</span>
+                  <TextSettingControl
+                    ariaLabel="Terminal font family"
+                    value={terminalFontFamily}
+                    defaultValue={DEFAULT_TERMINAL_FONT_FAMILY}
+                    onChange={(value) => onTerminalFontFamily(parseTerminalFontFamily(value))}
+                  />
+                </div>
                 <div className="settings-label">Accessibility</div>
                 <div className="settings-row">
                   <span title="Expose the visible terminal contents as screen-reader text; may add processing during heavy output">
@@ -1165,6 +1180,62 @@ function NumberSettingControl({
         onCommit={onChange}
       />
       <span className="settings-unit">{unit}</span>
+      <ResetSettingButton
+        disabled={value === defaultValue}
+        label={`Reset ${ariaLabel.toLowerCase()}`}
+        onClick={() => onChange(defaultValue)}
+      />
+    </div>
+  );
+}
+
+function TextSettingControl({
+  ariaLabel,
+  value,
+  defaultValue,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  defaultValue: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const cancelBlurCommitRef = useRef(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (cancelBlurCommitRef.current) {
+      cancelBlurCommitRef.current = false;
+      return;
+    }
+    onChange(draft);
+  };
+
+  return (
+    <div className="settings-text-control">
+      <input
+        className="settings-text-field mono"
+        type="text"
+        value={draft}
+        aria-label={ariaLabel}
+        spellCheck={false}
+        autoCapitalize="none"
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancelBlurCommitRef.current = true;
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+      />
       <ResetSettingButton
         disabled={value === defaultValue}
         label={`Reset ${ariaLabel.toLowerCase()}`}

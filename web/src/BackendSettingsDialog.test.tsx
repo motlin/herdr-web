@@ -5,6 +5,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendSettingsDialog } from "./BackendSettingsDialog";
+import { DEFAULT_TERMINAL_FONT_FAMILY } from "./terminalPrefs";
 
 const bridge = vi.hoisted(() => ({
   store: {
@@ -104,6 +105,8 @@ function settingsProps() {
     onTerminalFontSizePx: vi.fn(),
     terminalScreenReaderText: false,
     onTerminalScreenReaderText: vi.fn(),
+    terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+    onTerminalFontFamily: vi.fn(),
     terminalInputTransport: "json" as const,
     onTerminalInputTransport: vi.fn(),
     terminalInputBatchDelayMs: 0,

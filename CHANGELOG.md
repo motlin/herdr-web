@@ -42,6 +42,8 @@
 - Declared the existing Herdr logo as the browser favicon.
   [PR #56](https://github.com/kcosr/herdr-web/pull/56), contributed by
   [Craig P. Motlin (@motlin)](https://github.com/motlin).
+- Added a persisted terminal font-family setting so browsers can use installed Nerd Fonts and
+  custom CSS fallback stacks.
 
 ### Changed
 
