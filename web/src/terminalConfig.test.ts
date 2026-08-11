@@ -58,6 +58,28 @@ describe("Ghostty config import", () => {
     });
   });
 
+  it("rejects a font-family stack that cannot be persisted", () => {
+    const source = Array.from(
+      { length: 100 },
+      () => "font-family = Example Mono",
+    ).join("\n");
+
+    expect(() => terminalAppearanceFromGhosttySource(source)).toThrowError(
+      new Error("Ghostty config contains a font-family stack that cannot be saved"),
+    );
+  });
+
+  it("rejects color settings that cannot be persisted", () => {
+    const source = [
+      "background = #000000",
+      ...Array.from({ length: 1000 }, () => "palette = 255=#000000"),
+    ].join("\n");
+
+    expect(() => terminalAppearanceFromGhosttySource(source)).toThrowError(
+      new Error("Ghostty config contains color settings that cannot be saved"),
+    );
+  });
+
   it("rejects invalid or unsupported appearance input", () => {
     expect(() => terminalAppearanceFromGhosttySource("font-size = large")).toThrow(
       "Ghostty config contains an invalid font-size",

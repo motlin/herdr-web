@@ -3,7 +3,10 @@ import type { BridgeHttpUrl } from "./bridgeApi";
 import { apiErrorMessage } from "./bridgeApi";
 import { fetchWithTimeout } from "./fetchWithTimeout";
 import { parseTerminalFontFamily, parseTerminalFontSizePx } from "./terminalPrefs";
-import { hasSupportedTerminalThemeColors } from "./terminalTheme";
+import {
+  hasSupportedTerminalThemeColors,
+  parseTerminalThemeSource,
+} from "./terminalTheme";
 
 export type TerminalAppearance = {
   fontFamily?: string;
@@ -65,7 +68,7 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
     const key = line.slice(0, separatorIndex).trim();
     const value = unquote(line.slice(separatorIndex + 1).trim());
     if (key === "font-family") {
-      fontFamilies.push(parseTerminalFontFamily(value));
+      fontFamilies.push(parseImportedTerminalFontFamily(value));
     } else if (key === "font-size") {
       const parsed = Number(value);
       if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -79,7 +82,9 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
 
   const appearance: TerminalAppearance = {};
   if (fontFamilies.length > 0) {
-    appearance.fontFamily = [...fontFamilies, "monospace"].join(", ");
+    appearance.fontFamily = parseImportedTerminalFontFamily(
+      [...fontFamilies, "monospace"].join(", "),
+    );
   }
   if (fontSizePx !== undefined) {
     appearance.fontSizePx = fontSizePx;
@@ -87,13 +92,25 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
   if (themeLines.length > 0) {
     const themeSource = themeLines.join("\n");
     if (hasSupportedTerminalThemeColors(themeSource)) {
-      appearance.themeSource = themeSource;
+      const parsedThemeSource = parseTerminalThemeSource(themeSource);
+      if (parsedThemeSource !== themeSource) {
+        throw new Error("Ghostty config contains color settings that cannot be saved");
+      }
+      appearance.themeSource = parsedThemeSource;
     }
   }
   if (Object.keys(appearance).length === 0) {
     throw new Error("Ghostty config contains no supported terminal appearance settings");
   }
   return appearance;
+}
+
+function parseImportedTerminalFontFamily(value: string) {
+  const fontFamily = parseTerminalFontFamily(value);
+  if (fontFamily !== value) {
+    throw new Error("Ghostty config contains a font-family stack that cannot be saved");
+  }
+  return fontFamily;
 }
 
 function unquote(value: string) {
