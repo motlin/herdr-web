@@ -3,7 +3,7 @@ import type { BridgeHttpUrl } from "./bridgeApi";
 import { apiErrorMessage } from "./bridgeApi";
 import { fetchWithTimeout } from "./fetchWithTimeout";
 import { parseTerminalFontFamily, parseTerminalFontSizePx } from "./terminalPrefs";
-import { terminalThemeFromGhosttySource } from "./terminalTheme";
+import { hasSupportedTerminalThemeColors } from "./terminalTheme";
 
 export type TerminalAppearance = {
   fontFamily?: string;
@@ -86,7 +86,7 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
   }
   if (themeLines.length > 0) {
     const themeSource = themeLines.join("\n");
-    if (Object.keys(terminalThemeFromGhosttySource(themeSource)).length > 0) {
+    if (hasSupportedTerminalThemeColors(themeSource)) {
       appearance.themeSource = themeSource;
     }
   }

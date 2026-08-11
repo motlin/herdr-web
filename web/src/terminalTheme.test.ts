@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_TERMINAL_THEME,
   DEFAULT_TERMINAL_THEME_SOURCE,
   parseTerminalThemeSource,
   terminalThemeFromGhosttySource,
@@ -21,6 +22,7 @@ describe("terminal theme preferences", () => {
         palette = 16=#717273
       `),
     ).toStrictEqual({
+      ...DEFAULT_TERMINAL_THEME,
       background: "#010203",
       foreground: "#f1f2f3",
       cursor: "#111213",
@@ -29,6 +31,13 @@ describe("terminal theme preferences", () => {
       selectionForeground: "#414243",
       black: "#515253",
       brightBlack: "#616263",
+    });
+  });
+
+  it("keeps default colors omitted from an imported Ghostty theme", () => {
+    expect(terminalThemeFromGhosttySource("background = #ffffff")).toStrictEqual({
+      ...DEFAULT_TERMINAL_THEME,
+      background: "#ffffff",
     });
   });
 

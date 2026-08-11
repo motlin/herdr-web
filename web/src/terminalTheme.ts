@@ -42,7 +42,7 @@ const PALETTE_KEYS = [
   "brightWhite",
 ] as const;
 
-export const DEFAULT_TERMINAL_THEME = terminalThemeFromGhosttySource(
+export const DEFAULT_TERMINAL_THEME = terminalThemeOverridesFromGhosttySource(
   DEFAULT_TERMINAL_THEME_SOURCE,
 );
 
@@ -55,7 +55,7 @@ export function parseTerminalThemeSource(value: unknown) {
     return DEFAULT_TERMINAL_THEME_SOURCE;
   }
   try {
-    if (Object.keys(terminalThemeFromGhosttySource(source)).length === 0) {
+    if (!hasSupportedTerminalThemeColors(source)) {
       return DEFAULT_TERMINAL_THEME_SOURCE;
     }
     return source;
@@ -65,6 +65,17 @@ export function parseTerminalThemeSource(value: unknown) {
 }
 
 export function terminalThemeFromGhosttySource(source: string): ITheme {
+  return {
+    ...DEFAULT_TERMINAL_THEME,
+    ...terminalThemeOverridesFromGhosttySource(source),
+  };
+}
+
+export function hasSupportedTerminalThemeColors(source: string) {
+  return Object.keys(terminalThemeOverridesFromGhosttySource(source)).length > 0;
+}
+
+function terminalThemeOverridesFromGhosttySource(source: string): ITheme {
   const theme: ITheme = {};
   for (const rawLine of source.split(/\r?\n/gu)) {
     const line = rawLine.trim();
