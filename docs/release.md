@@ -18,6 +18,10 @@ They do not publish npm packages, and the package versions are not release versi
 1. Confirm the changelog has user-facing notes under `## [Unreleased]`.
    Entries merged through pull requests should include the PR number or link before the PR is
    merged.
+   For dependency, Herdr compatibility, or temporary patch changes, follow
+   [`docs/upstream-updates.md`](upstream-updates.md): record the old and new upstream versions,
+   compatibility or rendering effects, and patch state so the generated GitHub release notes carry
+   the same information.
 2. Confirm the vendored Herdr compatibility crate is intentional and clean:
 
 ```bash
@@ -115,6 +119,17 @@ Open `http://127.0.0.1:8787` and verify:
 - Multiple browser clients can attach to the same terminal.
 - Pane selection syncs between browser clients.
 - Typing, mobile text input, stage-only input, tap-focus setting, scrolling, and refit work.
+- The selected terminal font, font size, and imported Ghostty palette survive reload and render the
+  expected glyphs and ANSI colors.
+- Powerline separators, Nerd Font or other wide fallback glyphs, and cursor-row repaints render
+  without background gaps, clipping, or smudged segment edges.
+- Command-click on macOS or Control-click elsewhere opens a terminal URL while mouse tracking is
+  active without forwarding the overridden click to the terminal application.
+- Spaces and the selected Agents, Tabs, or Notes view scroll independently, and sticky sidebar
+  section headers remain usable at narrow and wide layouts.
+- The Herdr favicon appears in the browser tab.
+- Importing the selected bridge's standard Ghostty config updates the supported font, size, and
+  palette values without exposing unsupported config lines.
 - New tabs can launch Shell and every enabled managed built-in agent.
 - Split right/down can launch Shell and every enabled managed built-in agent.
 - A custom preset launches its exact configured `argv`, including a wrapper or SSH-shaped command,
