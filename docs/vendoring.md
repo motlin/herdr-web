@@ -32,8 +32,8 @@ The browser app is not vendored into Herdr. It lives at `web/`, and `herdr-web-b
 ## Current Reference
 
 - Upstream checkout: a clean Herdr source checkout outside this repository
-- Upstream release baseline: `v0.8.0`
-- Terminal wire baseline: protocol `19`
+- Reviewed release, commit, version floor, and terminal protocol:
+  [`config/upstream-baselines.json`](../config/upstream-baselines.json)
 
 Use the upstream checkout as an external reference for audits and refreshes. It is not required to
 build `herdr-web`.
@@ -62,7 +62,8 @@ bridge narrows the drift check to only the terminal attach message regions.
 
 ## Refresh Process
 
-Use a clean Herdr checkout at the reviewed `v0.8.0` release tag as the source reference. Do not
+Use a clean Herdr checkout at the release tag recorded in
+[`config/upstream-baselines.json`](../config/upstream-baselines.json) as the source reference. Do not
 refresh from an experimental tree that may contain unrelated local drift. Copy the reviewed
 upstream source files into the minimal compatibility crate; do not make the bridge compile against
 the external checkout or recreate a full upstream vendor snapshot.
@@ -156,6 +157,9 @@ When updating Herdr:
 - rerun `HERDR_SRC=/path/to/herdr scripts/check-vendor.sh`
 - rerun bridge tests and a browser smoke test
 - update this document if the bridge compatibility surface changes
+
+The grouping, review, and temporary patch rules for all upstream updates are documented in
+[`docs/upstream-updates.md`](upstream-updates.md).
 
 ## Long-Term Removal Condition
 

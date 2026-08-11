@@ -10,6 +10,7 @@
     "test:dev": "node --test scripts/dev.test.mjs",
     "test:web": "npm run test --prefix web",
     "lint:web": "npm run lint --prefix web",
+    "upstream:check": "node scripts/check-upstream-baselines.mjs",
     "vendor:check": "scripts/check-vendor.sh",
     "bridge:fmt": "cargo fmt --manifest-path bridge/Cargo.toml --check && cargo fmt --manifest-path vendor/herdr-compat/Cargo.toml --check",
     "bridge:build": "cargo build --manifest-path bridge/Cargo.toml --bin herdr-web-bridge",
@@ -19,7 +20,8 @@
     "android:open": "cap open android",
     "package:tarball": "scripts/package-tarball.sh",
     "build": "npm run build:web && npm run bridge:build",
-    "test": "npm run test:dev && npm run test:web && npm run bridge:test",
+    "test:upstream": "node --test scripts/check-upstream-baselines.test.mjs",
+    "test": "npm run test:dev && npm run test:upstream && npm run test:web && npm run bridge:test",
     "lint": "npm run lint:web && npm run bridge:fmt",
     "check": "npm run vendor:check && npm run lint && npm run test && npm run build"
   },

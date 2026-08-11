@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "herdr": {
+    "repository": "https://github.com/ogulcancelik/herdr",
+    "reviewedTag": "v0.8.0",
+    "reviewedCommit": "346411fa21afd297f5ed3b3fa56f9e3fbf7654b7",
+    "minimumVersion": "0.8.0",
+    "terminalProtocol": 19
+  },
+  "ghosttyWeb": {
+    "repository": "https://github.com/coder/ghostty-web",
+    "package": "ghostty-web",
+    "supportedRelease": "0.4.0",
+    "temporaryPatches": [
+      {
+        "id": "powerline-vector-clamping",
+        "active": true,
+        "state": "evaluation",
+        "appliesToRelease": "0.4.0",
+        "upstreamPullRequest": "https://github.com/coder/ghostty-web/pull/185",
+        "upstreamCommit": "a32d594d158dc3317ce94a3d4be59baf80675d85",
+        "removalPolicy": "release-contains-upstream-change"
+      }
+    ]
+  },
+  "updatePolicy": {
+    "grouping": {
+      "npm": {
+        "allowedUpdateTypes": ["minor", "patch"],
+        "separateMajorUpdates": true
+      },
+      "cargo": {
+        "allowedUpdateTypes": ["minor", "patch"],
+        "separateMajorUpdates": true
+      }
+    },
+    "manualReviewClasses": [
+      "major-update",
+      "herdr-private-api",
+      "herdr-terminal-protocol",
+      "ghostty-web",
+      "temporary-patch"
+    ],
+    "reviewGates": [
+      "continuous-integration",
+      "vendor-drift",
+      "runtime-compatibility",
+      "browser-smoke",
+      "patch-staleness"
+    ],
+    "patchRemoval": {
+      "trigger": "published-release-contains-upstream-change",
+      "requiredChecks": [
+        "verify-upstream-release",
+        "remove-local-patch",
+        "update-package-and-lockfile",
+        "run-continuous-integration",
+        "run-browser-smoke"
+      ]
+    }
+  }
+}
