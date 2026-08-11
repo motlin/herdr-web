@@ -85,8 +85,10 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
     appearance.fontSizePx = fontSizePx;
   }
   if (themeLines.length > 0) {
-    appearance.themeSource = themeLines.join("\n");
-    terminalThemeFromGhosttySource(appearance.themeSource);
+    const themeSource = themeLines.join("\n");
+    if (Object.keys(terminalThemeFromGhosttySource(themeSource)).length > 0) {
+      appearance.themeSource = themeSource;
+    }
   }
   if (Object.keys(appearance).length === 0) {
     throw new Error("Ghostty config contains no supported terminal appearance settings");

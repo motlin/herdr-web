@@ -55,7 +55,9 @@ export function parseTerminalThemeSource(value: unknown) {
     return DEFAULT_TERMINAL_THEME_SOURCE;
   }
   try {
-    terminalThemeFromGhosttySource(source);
+    if (Object.keys(terminalThemeFromGhosttySource(source)).length === 0) {
+      return DEFAULT_TERMINAL_THEME_SOURCE;
+    }
     return source;
   } catch {
     return DEFAULT_TERMINAL_THEME_SOURCE;
@@ -64,7 +66,6 @@ export function parseTerminalThemeSource(value: unknown) {
 
 export function terminalThemeFromGhosttySource(source: string): ITheme {
   const theme: ITheme = {};
-  let supportedEntries = 0;
   for (const rawLine of source.split(/\r?\n/gu)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) {
@@ -77,20 +78,14 @@ export function terminalThemeFromGhosttySource(source: string): ITheme {
     const key = line.slice(0, separatorIndex).trim();
     const value = unquote(line.slice(separatorIndex + 1).trim());
     if (key === "palette") {
-      if (applyPalette(theme, value)) {
-        supportedEntries += 1;
-      }
+      applyPalette(theme, value);
       continue;
     }
     const themeKey = themeKeyForGhosttyKey(key);
     if (!themeKey) {
       continue;
     }
-    theme[themeKey] = normalizeHexColor(value);
-    supportedEntries += 1;
-  }
-  if (supportedEntries === 0) {
-    throw new Error("Ghostty theme contains no supported colors");
+    applyColor(theme, themeKey, value);
   }
   return theme;
 }
@@ -107,8 +102,7 @@ function applyPalette(theme: ITheme, value: string) {
   if (index >= PALETTE_KEYS.length) {
     return false;
   }
-  theme[PALETTE_KEYS[index]] = normalizeHexColor(value.slice(separatorIndex + 1).trim());
-  return true;
+  return applyColor(theme, PALETTE_KEYS[index], value.slice(separatorIndex + 1).trim());
 }
 
 function themeKeyForGhosttyKey(key: string): keyof ITheme | null {
@@ -121,10 +115,15 @@ function themeKeyForGhosttyKey(key: string): keyof ITheme | null {
   return null;
 }
 
-function normalizeHexColor(value: string) {
+function applyColor(theme: ITheme, key: keyof ITheme, value: string) {
   if (!HEX_COLOR_PATTERN.test(value)) {
-    throw new Error(`Unsupported Ghostty color: ${value}`);
+    return false;
   }
+  theme[key] = normalizeHexColor(value);
+  return true;
+}
+
+function normalizeHexColor(value: string) {
   return `#${value.replace(/^#/u, "").toLowerCase()}`;
 }
 

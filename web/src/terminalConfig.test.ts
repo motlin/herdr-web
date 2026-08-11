@@ -47,6 +47,17 @@ describe("Ghostty config import", () => {
     });
   });
 
+  it("keeps non-color settings when a color format is unsupported", () => {
+    expect(
+      terminalAppearanceFromGhosttySource(`
+        font-family = Example Mono
+        cursor-color = white
+      `),
+    ).toStrictEqual({
+      fontFamily: "Example Mono, monospace",
+    });
+  });
+
   it("rejects invalid or unsupported appearance input", () => {
     expect(() => terminalAppearanceFromGhosttySource("font-size = large")).toThrow(
       "Ghostty config contains an invalid font-size",
