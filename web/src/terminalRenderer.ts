@@ -322,8 +322,13 @@ export class GhosttyRenderer implements TerminalRenderer {
 
   setTheme(theme: ITheme) {
     this.#theme = theme;
-    if (this.#terminal) {
-      this.#terminal.options.theme = theme;
+    const terminal = this.#terminal;
+    if (terminal) {
+      terminal.options.theme = theme;
+      terminal.renderer?.setTheme(theme);
+      if (terminal.renderer && terminal.wasmTerm) {
+        terminal.renderer.render(terminal.wasmTerm, true, terminal.viewportY, terminal);
+      }
     }
   }
 

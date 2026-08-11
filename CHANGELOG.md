@@ -82,6 +82,7 @@
   [Philippe SEGATORI (@tigitz)](https://github.com/tigitz).
 - Added Command-click and Control-click URL opening while terminal applications have mouse tracking
   enabled, without forwarding the overridden click to the application.
+- Fixed terminal palette changes not repainting terminals that are already mounted.
 
 ## [0.4.1] - 2026-08-05
 
