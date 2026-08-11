@@ -44,6 +44,8 @@
   [Craig P. Motlin (@motlin)](https://github.com/motlin).
 - Added a machine-readable upstream compatibility baseline and review policy for Herdr, Ghostty
   Web, routine dependency updates, and temporary patches.
+- Added a scheduled monitor that tracks newer stable Herdr and Ghostty Web releases in one GitHub
+  issue without changing repository content.
 - Added a persisted terminal font-family setting so browsers can use installed Nerd Fonts and
   custom CSS fallback stacks.
 - Added a terminal palette setting that imports Ghostty theme color lines for exact ANSI color

@@ -1,0 +1,132 @@
+name: Upstream release monitor
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-release-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: releases
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { readFile } = await import("node:fs/promises");
+            const { pathToFileURL } = await import("node:url");
+            const workspace = process.env.GITHUB_WORKSPACE;
+            const baselineModule = await import(
+              pathToFileURL(`${workspace}/scripts/check-upstream-baselines.mjs`).href
+            );
+            const monitorModule = await import(
+              pathToFileURL(`${workspace}/scripts/monitor-upstream-releases.mjs`).href
+            );
+            const baselines = baselineModule.parseUpstreamBaselines(
+              await readFile(`${workspace}/config/upstream-baselines.json`, "utf8"),
+            );
+            const herdrRepository = monitorModule.parseGitHubRepositoryAddress(
+              baselines.herdr.repository,
+            );
+            const herdrReleases = await github.paginate(
+              github.rest.repos.listReleases,
+              {
+                owner: herdrRepository.owner,
+                repo: herdrRepository.repository,
+                per_page: 100,
+              },
+            );
+            const herdrRelease = monitorModule.selectLatestStableHerdrRelease(
+              herdrReleases.map((release) => ({
+                tag: release.tag_name,
+                address: release.html_url,
+                draft: release.draft,
+                prerelease: release.prerelease,
+              })),
+            );
+            const packageAddress =
+              `https://registry.npmjs.org/${encodeURIComponent(baselines.ghosttyWeb.package)}/latest`;
+            const packageResponse = await fetch(packageAddress);
+            if (!packageResponse.ok) {
+              throw new Error(
+                `npm registry request failed: ${packageResponse.status} ${packageResponse.statusText}`,
+              );
+            }
+            const packageRelease = await packageResponse.json();
+            return monitorModule.compareUpstreamReleases(baselines, {
+              herdrRelease: {
+                tag: herdrRelease.tag,
+                address: herdrRelease.address,
+              },
+              ghosttyWebRelease: {
+                version: packageRelease.version,
+                address:
+                  `https://www.npmjs.com/package/${baselines.ghosttyWeb.package}` +
+                  `/v/${packageRelease.version}`,
+              },
+            });
+      - name: Update tracking issue
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_REPORT: ${{ steps.releases.outputs.result }}
+        with:
+          script: |
+            const report = JSON.parse(process.env.RELEASE_REPORT);
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "all",
+              per_page: 100,
+            });
+            const trackingIssues = issues.filter(
+              (issue) =>
+                !issue.pull_request &&
+                issue.title === report.issueTitle &&
+                issue.body?.includes("<!-- herdr-web-upstream-release-monitor -->"),
+            );
+            if (trackingIssues.length > 1) {
+              throw new Error("More than one upstream release tracking issue exists");
+            }
+            const trackingIssue = trackingIssues[0];
+            if (!report.driftDetected) {
+              if (trackingIssue?.state === "open") {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: trackingIssue.number,
+                  body: report.issueBody,
+                  state: "closed",
+                  state_reason: "completed",
+                });
+              }
+              return;
+            }
+            if (!trackingIssue) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: report.issueTitle,
+                body: report.issueBody,
+              });
+              return;
+            }
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: trackingIssue.number,
+              title: report.issueTitle,
+              body: report.issueBody,
+              state: "open",
+            });

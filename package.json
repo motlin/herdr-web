@@ -20,7 +20,7 @@
     "android:open": "cap open android",
     "package:tarball": "scripts/package-tarball.sh",
     "build": "npm run build:web && npm run bridge:build",
-    "test:upstream": "node --test scripts/check-upstream-baselines.test.mjs",
+    "test:upstream": "node --test scripts/check-upstream-baselines.test.mjs scripts/monitor-upstream-releases.test.mjs",
     "test": "npm run test:dev && npm run test:upstream && npm run test:web && npm run bridge:test",
     "lint": "npm run lint:web && npm run bridge:fmt",
     "check": "npm run vendor:check && npm run lint && npm run test && npm run build"
