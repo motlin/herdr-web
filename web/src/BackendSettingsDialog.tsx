@@ -1292,6 +1292,7 @@ function TextSettingControl({
             event.currentTarget.blur();
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             cancelBlurCommitRef.current = true;
             setDraft(value);
             event.currentTarget.blur();
@@ -1348,6 +1349,7 @@ function MultilineTextSettingControl({
             event.currentTarget.blur();
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             cancelBlurCommitRef.current = true;
             setDraft(value);
             event.currentTarget.blur();

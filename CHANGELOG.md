@@ -84,6 +84,7 @@
   enabled, without forwarding the overridden click to the application.
 - Fixed terminal palette changes not repainting terminals that are already mounted.
 - Fixed Ghostty appearance imports with unsupported color formats discarding valid font settings.
+- Fixed Escape in terminal appearance text fields closing the entire settings dialog.
 
 ## [0.4.1] - 2026-08-05
 

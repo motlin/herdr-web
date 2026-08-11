@@ -1,41 +1,49 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, useState } from "react";
+import { act, type ComponentProps, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendSettingsDialog } from "./BackendSettingsDialog";
 import { DEFAULT_TERMINAL_FONT_FAMILY } from "./terminalPrefs";
 import { DEFAULT_TERMINAL_THEME_SOURCE } from "./terminalTheme";
 
-const bridge = vi.hoisted(() => ({
+const bridgeManager = vi.hoisted(() => ({
   store: {
+    version: 2 as const,
+    enabledBridgeIds: ["same-origin"],
+    lastSelectedBridgeId: "same-origin",
     backends: [],
-    enabledBridgeIds: [],
   },
-  lastSelectedBridgeId: null,
+  storeLoaded: true,
   sameOriginAvailable: true,
+  availableRuntimes: [],
+  enabledRuntimes: [],
+  enabledBridgeIds: ["same-origin"],
+  lastSelectedBridgeId: "same-origin",
+  getRuntime: vi.fn(),
+  setBridgeEnabled: vi.fn(),
+  setLastSelectedBridgeId: vi.fn(),
+  markBridgeUsed: vi.fn(),
+  retryBridgeProbe: vi.fn(),
   addBackend: vi.fn(),
+  updateBackend: vi.fn(),
   deleteBackend: vi.fn(),
   probeBackend: vi.fn(),
-  setBridgeEnabled: vi.fn(),
-  updateBackend: vi.fn(),
 }));
 
 vi.mock("./bridge", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./bridge")>();
+  const original = await importOriginal<typeof import("./bridge")>();
   return {
-    ...actual,
-    useBridge: () => bridge,
+    ...original,
+    useBridge: () => bridgeManager,
   };
 });
 
 const roots: Root[] = [];
 
 beforeEach(() => {
-  (
-    globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true;
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 
 afterEach(async () => {
@@ -45,41 +53,73 @@ afterEach(async () => {
     }
   });
   document.body.innerHTML = "";
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
-describe("BackendSettingsDialog terminal accessibility", () => {
-  it("exposes a persisted-style opt-in control in the Terminal area", async () => {
+describe("BackendSettingsDialog", () => {
+  it("exposes a persisted-style screen-reader text control in the Terminal area", async () => {
     const onChange = vi.fn();
-    const { container } = await render(<SettingsHarness onChange={onChange} />);
-    const terminalTab = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-    ).find((button) => button.textContent?.includes("Terminal"));
-    if (!terminalTab) {
-      throw new Error("missing Terminal settings tab");
-    }
-
-    await act(async () => terminalTab.click());
+    const { container } = await render(<ScreenReaderSettingsHarness onChange={onChange} />);
+    await openTerminalSettings(container);
     const group = requiredElement<HTMLElement>(
       container,
       '[role="group"][aria-label="Terminal screen-reader text"]',
     );
-    const [off, on] = Array.from(group.querySelectorAll<HTMLButtonElement>("button"));
-    expect(off?.getAttribute("aria-pressed")).toBe("true");
-    expect(on?.getAttribute("aria-pressed")).toBe("false");
+    const off = requiredElement<HTMLButtonElement>(group, "button:first-of-type");
+    const on = requiredElement<HTMLButtonElement>(group, "button:last-of-type");
 
-    await act(async () => on?.click());
-    expect(onChange).toHaveBeenCalledWith(true);
-    expect(off?.getAttribute("aria-pressed")).toBe("false");
-    expect(on?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => on.click());
+
+    expect({
+      changeCalls: onChange.mock.calls,
+      pressed: [off.getAttribute("aria-pressed"), on.getAttribute("aria-pressed")],
+    }).toStrictEqual({
+      changeCalls: [[true]],
+      pressed: ["false", "true"],
+    });
+  });
+
+  it("keeps settings open when Escape discards a font family draft", async () => {
+    const { container, onClose } = await renderDialog();
+    await openTerminalSettings(container);
+    const input = requiredElement<HTMLInputElement>(
+      container,
+      'input[aria-label="Terminal font family"]',
+    );
+
+    await changeText(input, "Alice Mono, monospace");
+    await pressEscape(input);
+
+    expect({ closeCalls: onClose.mock.calls, value: input.value }).toStrictEqual({
+      closeCalls: [],
+      value: DEFAULT_TERMINAL_FONT_FAMILY,
+    });
+  });
+
+  it("keeps settings open when Escape discards a Ghostty palette draft", async () => {
+    const { container, onClose } = await renderDialog();
+    await openTerminalSettings(container);
+    const textarea = requiredElement<HTMLTextAreaElement>(
+      container,
+      'textarea[aria-label="Ghostty terminal config or palette"]',
+    );
+
+    await changeText(textarea, "palette = 0=#000000");
+    await pressEscape(textarea);
+
+    expect({ closeCalls: onClose.mock.calls, value: textarea.value }).toStrictEqual({
+      closeCalls: [],
+      value: DEFAULT_TERMINAL_THEME_SOURCE,
+    });
   });
 });
 
-function SettingsHarness({ onChange }: { onChange: (enabled: boolean) => void }) {
+function ScreenReaderSettingsHarness({ onChange }: { onChange: (enabled: boolean) => void }) {
   const [terminalScreenReaderText, setTerminalScreenReaderText] = useState(false);
+  const callback = vi.fn();
   return (
     <BackendSettingsDialog
-      {...settingsProps()}
+      {...settingsProps(vi.fn(), callback)}
       terminalScreenReaderText={terminalScreenReaderText}
       onTerminalScreenReaderText={(enabled) => {
         onChange(enabled);
@@ -89,56 +129,66 @@ function SettingsHarness({ onChange }: { onChange: (enabled: boolean) => void })
   );
 }
 
-function settingsProps() {
+async function renderDialog() {
+  const onClose = vi.fn();
+  const callback = vi.fn();
+  const { container } = await render(
+    <BackendSettingsDialog {...settingsProps(onClose, callback)} />,
+  );
+
+  return { container, onClose };
+}
+
+function settingsProps(onClose: () => void, callback: () => void) {
   return {
-    showMobileTerminalSettings: true,
+    showMobileTerminalSettings: false,
     notesEnabled: true,
-    onNotesEnabled: vi.fn(),
-    navigationSyncMode: "shared" as const,
-    onNavigationSyncMode: vi.fn(),
+    onNotesEnabled: callback,
+    navigationSyncMode: "shared",
+    onNavigationSyncMode: callback,
     agentFeaturesInTabs: true,
-    onAgentFeaturesInTabs: vi.fn(),
+    onAgentFeaturesInTabs: callback,
     combineMatchingWorkspaceNames: false,
-    onCombineMatchingWorkspaceNames: vi.fn(),
+    onCombineMatchingWorkspaceNames: callback,
     multiHostSpaceSelection: true,
-    onMultiHostSpaceSelection: vi.fn(),
+    onMultiHostSpaceSelection: callback,
     terminalFontSizePx: 13,
-    onTerminalFontSizePx: vi.fn(),
+    onTerminalFontSizePx: callback,
     terminalScreenReaderText: false,
-    onTerminalScreenReaderText: vi.fn(),
+    onTerminalScreenReaderText: callback,
     terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
-    onTerminalFontFamily: vi.fn(),
+    onTerminalFontFamily: callback,
     terminalThemeSource: DEFAULT_TERMINAL_THEME_SOURCE,
-    onTerminalThemeSource: vi.fn(),
+    onTerminalThemeSource: callback,
     ghosttyConfigImportAvailable: false,
     onImportGhosttyConfig: vi.fn(),
-    terminalInputTransport: "json" as const,
-    onTerminalInputTransport: vi.fn(),
+    terminalInputTransport: "json",
+    onTerminalInputTransport: callback,
     terminalInputBatchDelayMs: 0,
-    onTerminalInputBatchDelayMs: vi.fn(),
-    terminalOutputCoalesceMs: 16,
-    onTerminalOutputCoalesceMs: vi.fn(),
+    onTerminalInputBatchDelayMs: callback,
+    terminalOutputCoalesceMs: 0,
+    onTerminalOutputCoalesceMs: callback,
     contentInsetTopPx: 0,
-    onContentInsetTopPx: vi.fn(),
+    onContentInsetTopPx: callback,
     contentInsetBottomPx: 0,
-    onContentInsetBottomPx: vi.fn(),
+    onContentInsetBottomPx: callback,
     mobileControlsScalePercent: 100,
-    onMobileControlsScalePercent: vi.fn(),
-    mobileTerminalTapTarget: "command-input" as const,
-    onMobileTerminalTapTarget: vi.fn(),
-    mobileLongPressBehavior: "off" as const,
-    onMobileLongPressBehavior: vi.fn(),
-    mobileTouchSelectionEndpointTimeoutMs: 1500 as const,
-    onMobileTouchSelectionEndpointTimeoutMs: vi.fn(),
+    onMobileControlsScalePercent: callback,
+    mobileTerminalTapTarget: "command-input",
+    onMobileTerminalTapTarget: callback,
+    mobileLongPressBehavior: "off",
+    onMobileLongPressBehavior: callback,
+    mobileTouchSelectionEndpointTimeoutMs: 1500,
+    onMobileTouchSelectionEndpointTimeoutMs: callback,
     mobileCommandExpandingInput: true,
-    onMobileCommandExpandingInput: vi.fn(),
+    onMobileCommandExpandingInput: callback,
     mobileCommandEnterNewline: false,
-    onMobileCommandEnterNewline: vi.fn(),
-    showMobileKeyboardHideRefit: true,
+    onMobileCommandEnterNewline: callback,
+    showMobileKeyboardHideRefit: false,
     mobileKeyboardHideRefit: true,
-    onMobileKeyboardHideRefit: vi.fn(),
-    onClose: vi.fn(),
-  };
+    onMobileKeyboardHideRefit: callback,
+    onClose,
+  } satisfies ComponentProps<typeof BackendSettingsDialog>;
 }
 
 async function render(node: React.ReactNode) {
@@ -146,15 +196,49 @@ async function render(node: React.ReactNode) {
   document.body.appendChild(container);
   const root = createRoot(container);
   roots.push(root);
-  await act(async () => root.render(node));
-  return { container, root };
+  await act(async () => {
+    root.render(node);
+  });
+
+  return { container };
 }
 
-function requiredElement<T extends Element = HTMLElement>(
-  container: ParentNode,
-  selector: string,
-) {
-  const element = container.querySelector<T>(selector);
+async function openTerminalSettings(container: HTMLElement) {
+  const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+    (candidate) => candidate.textContent === "Terminal",
+  );
+  if (!tab) {
+    throw new Error("missing Terminal settings tab");
+  }
+  await act(async () => {
+    tab.click();
+  });
+}
+
+async function changeText(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = input instanceof HTMLInputElement
+    ? window.HTMLInputElement.prototype
+    : window.HTMLTextAreaElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  if (!setter) {
+    throw new Error("missing text control value setter");
+  }
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function pressEscape(input: HTMLInputElement | HTMLTextAreaElement) {
+  await act(async () => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+}
+
+function requiredElement<ElementType extends Element>(container: HTMLElement, selector: string) {
+  const element = container.querySelector<ElementType>(selector);
   if (!element) {
     throw new Error(`missing element: ${selector}`);
   }
