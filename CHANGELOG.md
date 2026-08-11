@@ -42,6 +42,8 @@
 - Declared the existing Herdr logo as the browser favicon.
   [PR #56](https://github.com/kcosr/herdr-web/pull/56), contributed by
   [Craig P. Motlin (@motlin)](https://github.com/motlin).
+- Added a review-only Herdr compatibility refresh command that preserves local adaptations and
+  requires explicit protocol, schema, headless attach, version-floor, and protocol-number review.
 - Added a machine-readable upstream compatibility baseline and review policy for Herdr, Ghostty
   Web, routine dependency updates, and temporary patches.
 - Added a scheduled monitor that tracks newer stable Herdr and Ghostty Web releases in one GitHub

@@ -3,6 +3,46 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPAT="$ROOT/vendor/herdr-compat"
+SOURCE_CHECKOUT="${HERDR_SRC:-}"
+REVIEWED_TAG_OVERRIDE=""
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/check-vendor.sh [--source /path/to/herdr [--tag vX.Y.Z]]
+
+Without arguments, validate the repository-owned compatibility baseline. Use
+--source to compare against a clean Herdr checkout. When --tag is supplied, the
+checkout must be at that tag instead of the repository-owned baseline tag.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --source)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      SOURCE_CHECKOUT="$2"
+      shift 2
+      ;;
+    --tag)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      REVIEWED_TAG_OVERRIDE="$2"
+      shift 2
+      ;;
+    --help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "$REVIEWED_TAG_OVERRIDE" && -z "$SOURCE_CHECKOUT" ]]; then
+  echo "--tag requires --source" >&2
+  exit 2
+fi
 
 {
   IFS= read -r EXPECTED_HERDR_TAG
@@ -10,6 +50,17 @@ COMPAT="$ROOT/vendor/herdr-compat"
   IFS= read -r MINIMUM_HERDR_VERSION
   IFS= read -r EXPECTED_HERDR_PROTOCOL
 } < <("$ROOT/scripts/check-upstream-baselines.mjs" --herdr-values)
+
+if [[ -n "$REVIEWED_TAG_OVERRIDE" ]]; then
+  EXPECTED_HERDR_TAG="$REVIEWED_TAG_OVERRIDE"
+  EXPECTED_HERDR_COMMIT="$(
+    git -C "$SOURCE_CHECKOUT" rev-parse --verify "refs/tags/$EXPECTED_HERDR_TAG^{}" 2>/dev/null || true
+  )"
+  if [[ -z "$EXPECTED_HERDR_COMMIT" ]]; then
+    echo "Herdr checkout does not contain tag $EXPECTED_HERDR_TAG" >&2
+    exit 1
+  fi
+fi
 
 if ! command -v rg >/dev/null; then
   echo "ripgrep (rg) is required for vendor checks" >&2
@@ -82,50 +133,50 @@ if [[ -n "$unexpected_path_deps" ]]; then
   exit 1
 fi
 
-if [[ -n "${HERDR_SRC:-}" ]]; then
-  if [[ ! -d "$HERDR_SRC/src" ]]; then
-    echo "HERDR_SRC must point at a Herdr checkout containing src/" >&2
+if [[ -n "$SOURCE_CHECKOUT" ]]; then
+  if [[ ! -d "$SOURCE_CHECKOUT/src" ]]; then
+    echo "Herdr source must point at a checkout containing src/" >&2
     exit 1
   fi
 
-  upstream_commit="$(git -C "$HERDR_SRC" rev-parse HEAD 2>/dev/null || true)"
+  upstream_commit="$(git -C "$SOURCE_CHECKOUT" rev-parse HEAD 2>/dev/null || true)"
   if [[ "$upstream_commit" != "$EXPECTED_HERDR_COMMIT" ]]; then
-    echo "HERDR_SRC must be a Herdr $EXPECTED_HERDR_TAG checkout at $EXPECTED_HERDR_COMMIT" >&2
+    echo "Herdr source must be a $EXPECTED_HERDR_TAG checkout at $EXPECTED_HERDR_COMMIT" >&2
     echo "found: ${upstream_commit:-not a git checkout}" >&2
     exit 1
   fi
 
-  if [[ -n "$(git -C "$HERDR_SRC" status --short)" ]]; then
-    echo "HERDR_SRC must be a clean Herdr $EXPECTED_HERDR_TAG checkout" >&2
-    git -C "$HERDR_SRC" status --short >&2
+  if [[ -n "$(git -C "$SOURCE_CHECKOUT" status --short)" ]]; then
+    echo "Herdr source must be a clean $EXPECTED_HERDR_TAG checkout" >&2
+    git -C "$SOURCE_CHECKOUT" status --short >&2
     exit 1
   fi
 
   compare_exact() {
     local upstream_rel="$1"
     local compat_rel="$2"
-    if ! diff -q "$HERDR_SRC/$upstream_rel" "$COMPAT/$compat_rel" >/dev/null; then
-      echo "Herdr compatibility copy drifted from HERDR_SRC: $compat_rel" >&2
-      diff -u "$HERDR_SRC/$upstream_rel" "$COMPAT/$compat_rel" | sed -n '1,120p' >&2
+    if ! diff -q "$SOURCE_CHECKOUT/$upstream_rel" "$COMPAT/$compat_rel" >/dev/null; then
+      echo "Herdr compatibility copy drifted from source: $compat_rel" >&2
+      diff -u "$SOURCE_CHECKOUT/$upstream_rel" "$COMPAT/$compat_rel" | sed -n '1,120p' >&2
       exit 1
     fi
   }
 
   compare_wire_body() {
     local wire_file
-    for wire_file in "$HERDR_SRC/src/protocol/wire.rs" "$COMPAT/src/protocol/wire.rs"; do
+    for wire_file in "$SOURCE_CHECKOUT/src/protocol/wire.rs" "$COMPAT/src/protocol/wire.rs"; do
       if ! grep -q '^use std::collections::HashMap;' "$wire_file"; then
         echo "wire.rs anchor line missing in $wire_file; update compare_wire_body" >&2
         exit 1
       fi
     done
     if ! diff -q \
-      <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$HERDR_SRC/src/protocol/wire.rs") \
+      <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$SOURCE_CHECKOUT/src/protocol/wire.rs") \
       <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$COMPAT/src/protocol/wire.rs") \
       >/dev/null; then
       echo "Herdr protocol wire copy drifted from HERDR_SRC" >&2
       diff -u \
-        <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$HERDR_SRC/src/protocol/wire.rs") \
+        <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$SOURCE_CHECKOUT/src/protocol/wire.rs") \
         <(awk 'seen || /^use std::collections::HashMap;/{seen=1} seen {print}' "$COMPAT/src/protocol/wire.rs") \
         | sed -n '1,120p' >&2
       exit 1
@@ -144,12 +195,12 @@ if [[ -n "${HERDR_SRC:-}" ]]; then
     }
 
     if ! diff -q \
-      <(normalize_popup_size_visibility "$HERDR_SRC/src/popup_size.rs") \
+      <(normalize_popup_size_visibility "$SOURCE_CHECKOUT/src/popup_size.rs") \
       <(normalize_popup_size_visibility "$COMPAT/src/popup_size.rs") \
       >/dev/null; then
       echo "Herdr popup_size copy drifted from HERDR_SRC beyond the intentional PopupSize visibility adaptation" >&2
       diff -u \
-        <(normalize_popup_size_visibility "$HERDR_SRC/src/popup_size.rs") \
+        <(normalize_popup_size_visibility "$SOURCE_CHECKOUT/src/popup_size.rs") \
         <(normalize_popup_size_visibility "$COMPAT/src/popup_size.rs") \
         | sed -n '1,120p' >&2
       exit 1
@@ -165,7 +216,7 @@ if [[ -n "${HERDR_SRC:-}" ]]; then
         ;;
     esac
     compare_exact "src/api/schema/$file_name" "src/api/schema/$file_name"
-  done < <(find "$HERDR_SRC/src/api/schema" -maxdepth 1 -type f -name '*.rs' -print0)
+  done < <(find "$SOURCE_CHECKOUT/src/api/schema" -maxdepth 1 -type f -name '*.rs' -print0)
   compare_popup_size
   compare_wire_body
 

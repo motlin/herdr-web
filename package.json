@@ -12,6 +12,7 @@
     "lint:web": "npm run lint --prefix web",
     "upstream:check": "node scripts/check-upstream-baselines.mjs",
     "vendor:check": "scripts/check-vendor.sh",
+    "vendor:refresh": "scripts/refresh-vendor.sh",
     "bridge:fmt": "cargo fmt --manifest-path bridge/Cargo.toml --check && cargo fmt --manifest-path vendor/herdr-compat/Cargo.toml --check",
     "bridge:build": "cargo build --manifest-path bridge/Cargo.toml --bin herdr-web-bridge",
     "bridge:test": "cargo test --manifest-path vendor/herdr-compat/Cargo.toml && cargo test --manifest-path bridge/Cargo.toml --bin herdr-web-bridge",

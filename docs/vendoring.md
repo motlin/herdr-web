@@ -124,6 +124,29 @@ body. Locally adapted files are intentionally excluded from exact comparison and
 manually during refresh. `PopupSize` is compared with only the documented visibility adaptation
 allowed.
 
+For a reviewed update, start from a clean `herdr-web` worktree and run the review-only refresh
+command with a clean Herdr checkout at the tag being evaluated:
+
+```bash
+npm run vendor:refresh -- \
+  --source "$HERDR_SRC" \
+  --tag vX.Y.Z \
+  --confirm-protocol-review \
+  --confirm-schema-review \
+  --confirm-headless-attach-review \
+  --confirm-version-floor-review \
+  --confirm-protocol-number-review
+```
+
+Before supplying those confirmations, inspect terminal wire changes, API schema changes,
+`src/server/headless.rs` terminal attach behavior, the minimum supported Herdr version, and the
+terminal protocol number. The command copies only the source paths listed above. It uses the
+currently recorded Herdr commit as the three-way merge base for adapted files, aborts before
+changing the compatibility crate if an adaptation conflicts, and leaves compatible changes as an
+uncommitted working-tree diff. It does not update the baseline, commit, push, publish, or create
+`vendor/herdr/`. Update `config/upstream-baselines.json` only after reviewing and validating that
+diff.
+
 5. Re-run validation:
 
 ```bash
