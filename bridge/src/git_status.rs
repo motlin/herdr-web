@@ -521,6 +521,12 @@ impl GitCommandRunner for SubprocessGit {
     }
 }
 
+/// Ports upstream `Workspace::resolved_identity_cwd_from`: a workspace's repo identity
+/// is its first tab's root pane, never an aggregate over every pane. Panes are listed
+/// tab by tab in tab order, and a split keeps the pane being split ahead of the new one,
+/// so the workspace's first listed pane is that root pane. `foreground_cwd` is ignored
+/// because it follows whatever directory a foreground process is in, which drifts into
+/// unrelated repositories.
 pub(crate) fn workspace_identity_cwd(
     workspace: &WorkspaceInfo,
     panes: &[PaneInfo],
@@ -532,8 +538,7 @@ pub(crate) fn workspace_identity_cwd(
     panes
         .iter()
         .filter(|pane| pane.workspace_id == workspace.workspace_id)
-        .filter_map(|pane| pane.foreground_cwd.as_ref().or(pane.cwd.as_ref()))
-        .min()
+        .find_map(|pane| pane.cwd.as_ref())
         .map(PathBuf::from)
 }
 
@@ -1440,22 +1445,52 @@ mod tests {
     }
 
     #[test]
-    fn workspace_identity_cwd_falls_back_to_min_pane_cwd() {
+    fn workspace_identity_cwd_uses_the_first_listed_pane_cwd() {
         let workspace = test_workspace("workspace-1");
         let panes = vec![
-            test_pane_in(
-                "pane-2",
-                "workspace-1",
-                Some("/test/zulu"),
-                Some("/test/charlie"),
-            ),
-            test_pane_in("pane-1", "workspace-1", Some("/test/alice"), None),
             test_pane_in(
                 "pane-3",
                 "workspace-2",
                 Some("/test/bob"),
                 Some("/test/bob/foreground"),
             ),
+            test_pane_in(
+                "pane-1",
+                "workspace-1",
+                Some("/test/zulu"),
+                Some("/test/charlie"),
+            ),
+            test_pane_in("pane-2", "workspace-1", Some("/test/alice"), None),
+        ];
+
+        assert_eq!(
+            workspace_identity_cwd(&workspace, &panes),
+            Some(PathBuf::from("/test/zulu"))
+        );
+    }
+
+    #[test]
+    fn workspace_identity_cwd_ignores_foreground_cwd_in_an_unrelated_repo() {
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in(
+            "pane-1",
+            "workspace-1",
+            Some("/Users/craig/projects/herdr-web"),
+            Some("/Users/craig/.dotfiles/git-clones/motlin/claude-code-prompts"),
+        )];
+
+        assert_eq!(
+            workspace_identity_cwd(&workspace, &panes),
+            Some(PathBuf::from("/Users/craig/projects/herdr-web"))
+        );
+    }
+
+    #[test]
+    fn workspace_identity_cwd_skips_panes_without_a_cwd() {
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![
+            test_pane_in("pane-1", "workspace-1", None, Some("/test/foreground")),
+            test_pane_in("pane-2", "workspace-1", Some("/test/alice"), None),
         ];
 
         assert_eq!(
