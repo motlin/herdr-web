@@ -161,6 +161,7 @@ struct Capabilities {
     herdr_keys: HerdrKeysCapability,
     launcher_presets: LauncherPresetsCapability,
     notes: NotesCapability,
+    sidebar_config: SidebarConfigCapability,
 }
 
 #[derive(Debug, Serialize)]
@@ -193,6 +194,11 @@ struct NotesCapability {
     version: u32,
 }
 
+#[derive(Debug, Serialize)]
+struct SidebarConfigCapability {
+    version: u32,
+}
+
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct GhosttyConfigResponse {
     version: u32,
@@ -203,6 +209,18 @@ struct GhosttyConfigResponse {
 struct HerdrKeysResponse {
     version: u32,
     source: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct SidebarConfigResponse {
+    version: u32,
+    source: &'static str,
+    path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    theme: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<String>,
+    sidebar: crate::sidebar_config::SidebarLayout,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1074,6 +1092,10 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
         .route(
             "/api/ghostty-config",
             get(ghostty_config_handler).options(preflight_handler),
+        )
+        .route(
+            "/api/sidebar-config",
+            get(sidebar_config_handler).options(preflight_handler),
         )
         .route(
             "/api/herdr-keys",
@@ -2930,7 +2952,11 @@ async fn capabilities_handler(
     headers: HeaderMap,
 ) -> Result<Json<Capabilities>, BridgeError> {
     ensure_allowed_request(&headers, &state.request_policy)?;
-    Ok(Json(Capabilities {
+    Ok(Json(capabilities_response()))
+}
+
+fn capabilities_response() -> Capabilities {
+    Capabilities {
         commands: ALLOWED_COMMANDS,
         agent_activity: AgentActivityCapability { version: 1 },
         agent_pins: AgentPinsCapability { version: 1 },
@@ -2938,7 +2964,8 @@ async fn capabilities_handler(
         herdr_keys: HerdrKeysCapability { version: 1 },
         launcher_presets: LauncherPresetsCapability { version: 1 },
         notes: NotesCapability { version: 1 },
-    }))
+        sidebar_config: SidebarConfigCapability { version: 1 },
+    }
 }
 
 async fn ghostty_config_handler(
@@ -2950,6 +2977,34 @@ async fn ghostty_config_handler(
         .await
         .map_err(|err| BridgeError::Protocol(err.to_string()))??;
     Ok(Json(response))
+}
+
+async fn sidebar_config_handler(
+    State(state): State<BridgeState>,
+    headers: HeaderMap,
+) -> Result<Json<SidebarConfigResponse>, BridgeError> {
+    ensure_allowed_request(&headers, &state.request_policy)?;
+    let loaded = tokio::task::spawn_blocking(crate::sidebar_config::load_sidebar_config)
+        .await
+        .map_err(|error| BridgeError::Protocol(error.to_string()))?;
+    Ok(Json(sidebar_config_response(loaded)))
+}
+
+fn sidebar_config_response(
+    loaded: crate::sidebar_config::LoadedSidebarConfig,
+) -> SidebarConfigResponse {
+    let source = match loaded.source {
+        crate::sidebar_config::SidebarConfigSource::Defaults => "defaults",
+        crate::sidebar_config::SidebarConfigSource::Config => "config",
+    };
+    SidebarConfigResponse {
+        version: 1,
+        source,
+        path: loaded.path,
+        theme: loaded.theme,
+        diagnostics: loaded.diagnostic.into_iter().collect(),
+        sidebar: loaded.layout,
+    }
 }
 
 fn load_ghostty_config() -> Result<GhosttyConfigResponse, BridgeError> {
@@ -4718,6 +4773,64 @@ mod tests {
         headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
         insert_static_cache_header(&mut headers, "/index.html", StatusCode::OK);
         assert_eq!(headers.get(CACHE_CONTROL).unwrap(), "no-store");
+    }
+
+    #[test]
+    fn capabilities_advertise_sidebar_config_version() {
+        assert_eq!(
+            serde_json::to_value(capabilities_response().sidebar_config).unwrap(),
+            serde_json::json!({"version": 1})
+        );
+    }
+
+    #[test]
+    fn sidebar_config_handler_serves_the_documented_shape() {
+        let _guard = crate::session::TEST_ENV_LOCK.lock().unwrap();
+        let test_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-data")
+            .join(format!("sidebar-config-handler-{}", std::process::id()));
+        let config_path = test_root.join("config.toml");
+        let _ = std::fs::remove_dir_all(&test_root);
+        std::fs::create_dir_all(&test_root).unwrap();
+        std::fs::write(&config_path, "[ui]\ntheme = \"one-dark\"\n").unwrap();
+
+        let previous_path = std::env::var(crate::sidebar_config::CONFIG_PATH_ENV_VAR).ok();
+        std::env::set_var(crate::sidebar_config::CONFIG_PATH_ENV_VAR, &config_path);
+        let response = sidebar_config_response(crate::sidebar_config::load_sidebar_config());
+        restore_env(crate::sidebar_config::CONFIG_PATH_ENV_VAR, previous_path);
+        std::fs::remove_dir_all(&test_root).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            serde_json::json!({
+                "version": 1,
+                "source": "defaults",
+                "path": config_path,
+                "theme": "one-dark",
+                "sidebar": {
+                    "spaces": {
+                        "rows": [
+                            [{"token": "state_icon"}, {"token": "workspace"}],
+                            [{"token": "branch"}, {"token": "git_status"}],
+                        ],
+                        "row_gap": 0,
+                    },
+                    "agents": {
+                        "rows": [
+                            [
+                                {"token": "state_icon"},
+                                {"token": "workspace"},
+                                {"token": "tab"},
+                            ],
+                            [{"token": "agent"}],
+                        ],
+                        "rows_by_agent": {},
+                        "row_gap": 0,
+                    },
+                },
+            })
+        );
     }
 
     #[test]

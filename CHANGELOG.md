@@ -63,6 +63,7 @@
   Shift+wheel to scroll through local scrollback; taps on mobile now click controls in terminal
   applications.
 - Added bridge parsing for Herdr's configurable TUI sidebar token rows.
+- Added a bridge endpoint that serves Herdr's sidebar token layout and theme to web clients.
 
 ### Changed
 

@@ -103,6 +103,7 @@ pub(crate) struct LoadedSidebarConfig {
     pub(crate) layout: SidebarLayout,
     pub(crate) source: SidebarConfigSource,
     pub(crate) path: PathBuf,
+    pub(crate) theme: Option<String>,
     pub(crate) diagnostic: Option<String>,
 }
 
@@ -119,6 +120,7 @@ struct RawConfigRoot {
 
 #[derive(Debug, Deserialize)]
 struct RawUiConfig {
+    theme: Option<String>,
     sidebar: Option<RawSidebarLayout>,
 }
 
@@ -176,6 +178,7 @@ fn load_sidebar_config_from_path(path: PathBuf) -> LoadedSidebarConfig {
         Err(error) => {
             return fallback(
                 path,
+                None,
                 format!("could not read sidebar config metadata: {error}"),
             )
         }
@@ -183,44 +186,61 @@ fn load_sidebar_config_from_path(path: PathBuf) -> LoadedSidebarConfig {
     if metadata.len() > MAX_CONFIG_BYTES {
         return fallback(
             path,
+            None,
             format!("sidebar config exceeds the {MAX_CONFIG_BYTES}-byte size limit"),
         );
     }
 
     let contents = match std::fs::read_to_string(&path) {
         Ok(contents) => contents,
-        Err(error) => return fallback(path, format!("could not read sidebar config: {error}")),
+        Err(error) => {
+            return fallback(
+                path,
+                None,
+                format!("could not read sidebar config: {error}"),
+            )
+        }
     };
     let root = match toml::from_str::<RawConfigRoot>(&contents) {
         Ok(root) => root,
-        Err(error) => return fallback(path, format!("could not parse sidebar config: {error}")),
+        Err(error) => {
+            return fallback(
+                path,
+                None,
+                format!("could not parse sidebar config: {error}"),
+            )
+        }
     };
+    let theme = root.ui.as_ref().and_then(|ui| ui.theme.clone());
     let Some(raw_sidebar) = root.ui.and_then(|ui| ui.sidebar) else {
         return LoadedSidebarConfig {
             layout: SidebarLayout::default(),
             source: SidebarConfigSource::Defaults,
             path,
+            theme,
             diagnostic: None,
         };
     };
     let layout = match parse_sidebar_layout(raw_sidebar) {
         Ok(layout) => layout,
-        Err(error) => return fallback(path, error),
+        Err(error) => return fallback(path, theme, error),
     };
 
     LoadedSidebarConfig {
         layout,
         source: SidebarConfigSource::Config,
         path,
+        theme,
         diagnostic: None,
     }
 }
 
-fn fallback(path: PathBuf, diagnostic: String) -> LoadedSidebarConfig {
+fn fallback(path: PathBuf, theme: Option<String>, diagnostic: String) -> LoadedSidebarConfig {
     LoadedSidebarConfig {
         layout: SidebarLayout::default(),
         source: SidebarConfigSource::Defaults,
         path,
+        theme,
         diagnostic: Some(diagnostic),
     }
 }
@@ -465,6 +485,7 @@ value = [{ nested = "ignored" }]
 
         assert_eq!(loaded.layout, SidebarLayout::default());
         assert_eq!(loaded.source, SidebarConfigSource::Defaults);
+        assert_eq!(loaded.theme, Some("one-dark".to_string()));
         assert_eq!(loaded.diagnostic, None);
         std::fs::remove_dir_all(root).unwrap();
     }
