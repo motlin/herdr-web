@@ -80,6 +80,40 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+[data-theme="one-dark"] {
+  /* Invented web-only roles; the TUI palette has no matching source values. */
+  --crust: #21252b;
+  --accent-soft: rgba(97, 175, 239, 0.14);
+
+  --mantle: #282c34;
+  --base: #282c34;
+  --surface0: #2c313a;
+  --surface1: #3e4451;
+  --surface2: #5c6370;
+  --overlay0: #5c6370;
+  --overlay1: #737a87;
+  --subtext0: #969ca8;
+  --subtext1: #abb2bf;
+  --text: #abb2bf;
+
+  --blue: #61afef;
+  --lavender: #61afef;
+  --sapphire: #56b6c2;
+  --teal: #56b6c2;
+  --green: #98c379;
+  --yellow: #e5c07b;
+  --peach: #d19a66;
+  --red: #e06c75;
+  --mauve: #c678dd;
+
+  --sidebar-bg: #282c34;
+  --row-hover: #2c313a;
+  --row-active: #3e4451;
+  --line: #3e4451;
+  --line-soft: #282c34;
+  --accent: #61afef;
+}
+
 * {
   box-sizing: border-box;
 }

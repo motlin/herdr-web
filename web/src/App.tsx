@@ -1398,6 +1398,21 @@ export function App() {
         : null,
     [bridge.enabledRuntimes, selectedBridgeId],
   );
+  const selectedSidebarTheme = selectedRuntime
+    ? sidebarConfigStates[selectedRuntime.id]?.connectionKey === selectedRuntime.connectionKey
+      ? sidebarConfigStates[selectedRuntime.id]?.response?.theme
+      : undefined
+    : undefined;
+  useEffect(() => {
+    if (selectedSidebarTheme) {
+      document.documentElement.dataset.theme = selectedSidebarTheme;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+    return () => {
+      delete document.documentElement.dataset.theme;
+    };
+  }, [selectedSidebarTheme]);
   const selectedConnectionState =
     selectedRuntime && connectionStates[selectedRuntime.id]?.connectionKey === selectedRuntime.connectionKey
       ? connectionStates[selectedRuntime.id]

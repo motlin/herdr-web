@@ -65,6 +65,7 @@
 - Added bridge parsing for Herdr's configurable TUI sidebar token rows.
 - Added a bridge endpoint that serves Herdr's sidebar token layout and theme to web clients.
 - Added cached Git branch and upstream ahead/behind status to workspace snapshots for sidebar rows.
+- Added the selected bridge's Herdr theme to the web interface, including the one-dark palette.
 
 ### Changed
 
