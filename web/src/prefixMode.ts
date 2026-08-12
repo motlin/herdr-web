@@ -17,6 +17,15 @@ export type PrefixModeTransition<Action extends string> = {
   emission: PrefixModeEmission<Action> | null;
 };
 
+const MODIFIER_KEYS: ReadonlySet<string> = new Set([
+  "Shift",
+  "Alt",
+  "Control",
+  "Meta",
+  "AltGraph",
+  "CapsLock",
+]);
+
 const SECONDARY_PREFIX: KeyChord = {
   key: "b",
   ctrl: true,
@@ -46,6 +55,10 @@ export function transitionPrefixMode<Action extends string>(
       swallow: true,
       emission: { type: "literal", data: input.data },
     };
+  }
+
+  if (MODIFIER_KEYS.has(input.chord.key)) {
+    return { state: "pending", swallow: true, emission: null };
   }
 
   if (input.chord.key === "Escape") {

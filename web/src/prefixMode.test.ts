@@ -54,6 +54,35 @@ const bindings = new Map<string, Binding>([
       },
     },
   ],
+  [
+    "close_tab",
+    {
+      type: "chord",
+      prefix: true,
+      chord: {
+        key: "x",
+        ctrl: false,
+        shift: true,
+        alt: false,
+        meta: false,
+      },
+    },
+  ],
+  [
+    "focus_agent",
+    {
+      type: "indexed",
+      prefix: true,
+      modifiers: {
+        ctrl: false,
+        shift: false,
+        alt: true,
+        meta: false,
+      },
+      first: 1,
+      last: 9,
+    },
+  ],
 ]);
 
 function input(chord: KeyChord, data = chord.key) {
@@ -219,5 +248,86 @@ describe("prefix mode", () => {
       swallow: true,
       emission: { type: "action", action: "detach" },
     });
+  });
+
+  it("stays pending for a bare Shift keydown and then emits shift+x", () => {
+    expect(
+      transitionPrefixMode(
+        "pending",
+        input({
+          key: "Shift",
+          ctrl: false,
+          shift: true,
+          alt: false,
+          meta: false,
+        }),
+        configuredPrefix,
+        bindings,
+      ),
+    ).toStrictEqual({ state: "pending", swallow: true, emission: null });
+    expect(
+      transitionPrefixMode(
+        "pending",
+        input({
+          key: "x",
+          ctrl: false,
+          shift: true,
+          alt: false,
+          meta: false,
+        }),
+        configuredPrefix,
+        bindings,
+      ),
+    ).toStrictEqual({
+      state: "idle",
+      swallow: true,
+      emission: { type: "action", action: "close_tab" },
+    });
+  });
+
+  it("stays pending for a bare Alt keydown and then emits alt+1", () => {
+    expect(
+      transitionPrefixMode(
+        "pending",
+        input({
+          key: "Alt",
+          ctrl: false,
+          shift: false,
+          alt: true,
+          meta: false,
+        }),
+        configuredPrefix,
+        bindings,
+      ),
+    ).toStrictEqual({ state: "pending", swallow: true, emission: null });
+    expect(
+      transitionPrefixMode(
+        "pending",
+        input({
+          key: "1",
+          ctrl: false,
+          shift: false,
+          alt: true,
+          meta: false,
+        }),
+        configuredPrefix,
+        bindings,
+      ),
+    ).toStrictEqual({
+      state: "idle",
+      swallow: true,
+      emission: { type: "action", action: "focus_agent", index: 1 },
+    });
+  });
+
+  it.each([
+    { key: "Control", ctrl: true, shift: false, alt: false, meta: false },
+    { key: "Meta", ctrl: false, shift: false, alt: false, meta: true },
+    { key: "AltGraph", ctrl: false, shift: false, alt: true, meta: false },
+    { key: "CapsLock", ctrl: false, shift: false, alt: false, meta: false },
+  ] satisfies KeyChord[])("stays pending for a bare $key keydown", (chord) => {
+    expect(
+      transitionPrefixMode("pending", input(chord), configuredPrefix, bindings),
+    ).toStrictEqual({ state: "pending", swallow: true, emission: null });
   });
 });
