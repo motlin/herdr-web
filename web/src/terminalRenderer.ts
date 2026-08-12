@@ -1423,19 +1423,32 @@ export class GhosttyRenderer implements TerminalRenderer {
       suppressCompatMouseEvent(event);
     };
     const onContextMenu = (event: MouseEvent) => {
-      if (!event.ctrlKey || !suppressedMousePress) {
+      if (event.ctrlKey && suppressedMousePress) {
+        suppressTerminalMouseEvent(event);
+        terminal.textarea?.blur();
+        if (!suppressedMousePress.openedFromContextMenu) {
+          window.open(suppressedMousePress.url, "_blank", "noopener,noreferrer");
+          suppressedMousePress.openedFromContextMenu = true;
+        }
         return;
       }
-      suppressTerminalMouseEvent(event);
-      terminal.textarea?.blur();
-      if (!suppressedMousePress.openedFromContextMenu) {
-        window.open(suppressedMousePress.url, "_blank", "noopener,noreferrer");
-        suppressedMousePress.openedFromContextMenu = true;
+      if (
+        mouseReportConsumedClick ||
+        (this.#terminalMouseMode(terminal).tracking !== "off" && !event.shiftKey)
+      ) {
+        event.preventDefault();
+      }
+    };
+    const onAuxClick = (event: MouseEvent) => {
+      if (mouseReportConsumedClick) {
+        mouseReportConsumedClick = false;
+        event.preventDefault();
       }
     };
     const onClick = (event: MouseEvent) => {
       if (mouseReportConsumedClick) {
         mouseReportConsumedClick = false;
+        suppressTerminalMouseEvent(event);
         return;
       }
       if (suppressCompatMouseEvent(event)) {
@@ -1478,6 +1491,7 @@ export class GhosttyRenderer implements TerminalRenderer {
     container.addEventListener("mouseleave", onMouseLeave, { capture: true });
     container.addEventListener("mouseup", onMouseUp, { capture: true });
     container.addEventListener("contextmenu", onContextMenu, { capture: true });
+    container.addEventListener("auxclick", onAuxClick, { capture: true });
     container.addEventListener("click", onClick, { capture: true });
     this.#touchCleanup = () => {
       endMouseDragSession();
@@ -1494,6 +1508,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       container.removeEventListener("mouseleave", onMouseLeave, { capture: true });
       container.removeEventListener("mouseup", onMouseUp, { capture: true });
       container.removeEventListener("contextmenu", onContextMenu, { capture: true });
+      container.removeEventListener("auxclick", onAuxClick, { capture: true });
       container.removeEventListener("click", onClick, { capture: true });
     };
   }
