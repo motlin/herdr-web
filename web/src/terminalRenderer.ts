@@ -17,6 +17,11 @@ import {
   TerminalAccessibleTextPublisher,
 } from "./terminalAccessibleText";
 import {
+  encodeTerminalMouseReport,
+  terminalMouseButtonFromDomButton,
+} from "./terminalMouseReport";
+import type { TerminalMouseButton } from "./terminalMouseReport";
+import {
   beginTouchSelectionEndpointDrag,
   commitTouchSelectionStart,
   completeTouchSelection,
@@ -452,7 +457,6 @@ export class GhosttyRenderer implements TerminalRenderer {
     }
   }
 
-  // eslint-disable-next-line no-unused-private-class-members
   #terminalMouseMode(terminal: Terminal): TerminalMouseMode {
     try {
       return terminalMouseMode((modeNumber) => terminal.getMode(modeNumber, false));
@@ -461,7 +465,6 @@ export class GhosttyRenderer implements TerminalRenderer {
     }
   }
 
-  // eslint-disable-next-line no-unused-private-class-members
   #writeTerminalInput(terminal: Terminal, data: string) {
     try {
       terminal.input(data, true);
@@ -519,6 +522,8 @@ export class GhosttyRenderer implements TerminalRenderer {
     let mouseDownX: number | null = null;
     let mouseDownY: number | null = null;
     let suppressedMousePress: { url: string; openedFromContextMenu: boolean } | null = null;
+    let mouseReportConsumedClick = false;
+    const heldMouseButtons = new Set<TerminalMouseButton>();
     let selectionState: TerminalTouchSelectionState = idleTouchSelectionState;
     let endpointBubble: HTMLDivElement | null = null;
     let loupe: { root: HTMLDivElement; canvas: HTMLCanvasElement } | null = null;
@@ -1162,10 +1167,56 @@ export class GhosttyRenderer implements TerminalRenderer {
       }
       return false;
     };
+    const beginMouseDragSession = (button: TerminalMouseButton) => {
+      heldMouseButtons.add(button);
+    };
     const onMouseDown = (event: MouseEvent) => {
       mouseDownX = event.clientX;
       mouseDownY = event.clientY;
       suppressedMousePress = null;
+      const mode = this.#terminalMouseMode(terminal);
+      if (mode.tracking !== "off" && !event.shiftKey) {
+        if (suppressCompatMouseEvent(event)) {
+          return;
+        }
+        const linkText = event.button === 0 ? mouseLinkText(event) : null;
+        if (linkText) {
+          suppressedMousePress = { url: linkText, openedFromContextMenu: false };
+          suppressTerminalMouseEvent(event);
+          return;
+        }
+        const point = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
+        if (!point.inside) {
+          return;
+        }
+        const button = terminalMouseButtonFromDomButton(event.button);
+        const report = encodeTerminalMouseReport(
+          {
+            kind: "press",
+            button,
+            wheel: null,
+            col: point.col,
+            row: point.row,
+            pixelX: point.pixelX,
+            pixelY: point.pixelY,
+            shift: event.shiftKey,
+            alt: event.altKey,
+            ctrl: event.ctrlKey,
+          },
+          mode,
+        );
+        if (!button || !report) {
+          return;
+        }
+        this.#writeTerminalInput(terminal, report);
+        suppressTerminalMouseEvent(event);
+        if (!redirectTapFocus(event)) {
+          terminal.focus();
+        }
+        beginMouseDragSession(button);
+        mouseReportConsumedClick = true;
+        return;
+      }
       if (this.#hasMouseTracking(terminal)) {
         const linkText = event.button === 0 ? mouseLinkText(event) : null;
         if (linkText) {
@@ -1200,6 +1251,10 @@ export class GhosttyRenderer implements TerminalRenderer {
       }
     };
     const onClick = (event: MouseEvent) => {
+      if (mouseReportConsumedClick) {
+        mouseReportConsumedClick = false;
+        return;
+      }
       if (suppressCompatMouseEvent(event)) {
         return;
       }
