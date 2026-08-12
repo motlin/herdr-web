@@ -1,14 +1,382 @@
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use herdr_compat::api::schema::{PaneInfo, WorkspaceInfo};
+use serde::Serialize;
 
+use crate::sidebar_config::GitRefreshDemand;
 use crate::workspace::{git_common_dir_for_git_dir, git_dir_for_repo_root, git_repo_root};
 
-const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const GIT_STATUS_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const GIT_REPO_DISCOVERY_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+const GIT_NON_REPO_RETRY_INTERVAL: Duration = Duration::from_secs(30);
+const GIT_TARGET_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const GIT_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(5);
 const GIT_COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct WorkspaceGitStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ahead: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) behind: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitStatusCacheEntry {
+    fingerprint: Option<GitStatusFingerprint>,
+    retry_after: Option<Instant>,
+    ahead_behind: Option<(usize, usize)>,
+    ahead_behind_cached: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitRefreshTarget {
+    cwd: PathBuf,
+    cache_key_hint: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitRefreshItem {
+    workspace_id: String,
+    cwd: PathBuf,
+    cache_key_hint: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GitRefreshJob {
+    cache_key: PathBuf,
+    workspace_ids: Vec<String>,
+    cached: Option<GitStatusCacheEntry>,
+}
+
+#[derive(Debug, Default)]
+struct GitStatusState {
+    statuses: HashMap<String, WorkspaceGitStatus>,
+    entries: HashMap<PathBuf, GitStatusCacheEntry>,
+    targets: HashMap<String, GitRefreshTarget>,
+    targets_seen_at: Option<Instant>,
+    last_refresh: Option<Instant>,
+    last_repo_discovery: Option<Instant>,
+    demand: GitRefreshDemand,
+}
+
+pub(crate) struct GitStatusManager {
+    state: Mutex<GitStatusState>,
+    runner: Arc<dyn GitCommandRunner>,
+}
+
+impl GitStatusManager {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Mutex::new(GitStatusState::default()),
+            runner: Arc::new(SubprocessGit),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_runner(runner: Arc<dyn GitCommandRunner>) -> Self {
+        Self {
+            state: Mutex::new(GitStatusState::default()),
+            runner,
+        }
+    }
+
+    pub(crate) fn observe_snapshot(&self, workspaces: &[WorkspaceInfo], panes: &[PaneInfo]) {
+        self.observe_snapshot_at(workspaces, panes, Instant::now());
+    }
+
+    fn observe_snapshot_at(&self, workspaces: &[WorkspaceInfo], panes: &[PaneInfo], now: Instant) {
+        let observed = workspaces
+            .iter()
+            .filter_map(|workspace| {
+                workspace_identity_cwd(workspace, panes).map(|cwd| {
+                    let workspace_id = workspace.workspace_id.clone();
+                    (workspace_id, cwd)
+                })
+            })
+            .collect::<HashMap<_, _>>();
+        let mut state = self.state.lock().expect("git status lock poisoned");
+        let previous_targets = std::mem::take(&mut state.targets);
+        state.targets = observed
+            .into_iter()
+            .map(|(workspace_id, cwd)| {
+                let cache_key_hint = previous_targets
+                    .get(&workspace_id)
+                    .filter(|target| target.cwd == cwd)
+                    .and_then(|target| target.cache_key_hint.clone());
+                (
+                    workspace_id,
+                    GitRefreshTarget {
+                        cwd,
+                        cache_key_hint,
+                    },
+                )
+            })
+            .collect();
+        let active_workspace_ids = state.targets.keys().cloned().collect::<HashSet<_>>();
+        state
+            .statuses
+            .retain(|workspace_id, _| active_workspace_ids.contains(workspace_id));
+        state.targets_seen_at = Some(now);
+    }
+
+    #[cfg(test)]
+    fn observe_targets_seen_at(&self, now: Instant) {
+        self.state
+            .lock()
+            .expect("git status lock poisoned")
+            .targets_seen_at = Some(now);
+    }
+
+    pub(crate) fn statuses(&self) -> HashMap<String, WorkspaceGitStatus> {
+        self.state
+            .lock()
+            .expect("git status lock poisoned")
+            .statuses
+            .clone()
+    }
+
+    pub(crate) fn set_demand(&self, demand: GitRefreshDemand) {
+        let mut state = self.state.lock().expect("git status lock poisoned");
+        state.demand = demand;
+        if !demand.branch && !demand.ahead_behind {
+            state.statuses.clear();
+        }
+    }
+
+    pub(crate) fn refresh_once(&self, now: Instant) -> bool {
+        let (items, entries, demand, targets_seen_at) = {
+            let mut state = self.state.lock().expect("git status lock poisoned");
+            if (!state.demand.branch && !state.demand.ahead_behind)
+                || state.targets.is_empty()
+                || state.targets_seen_at.is_none_or(|seen_at| {
+                    now.saturating_duration_since(seen_at) > GIT_TARGET_IDLE_TIMEOUT
+                })
+                || state.last_refresh.is_some_and(|last_refresh| {
+                    now.saturating_duration_since(last_refresh) < GIT_STATUS_REFRESH_INTERVAL
+                })
+            {
+                return false;
+            }
+            let refresh_repo_discovery = state.last_repo_discovery.is_none_or(|last_discovery| {
+                now.saturating_duration_since(last_discovery) >= GIT_REPO_DISCOVERY_REFRESH_INTERVAL
+            });
+            let targets = std::mem::take(&mut state.targets);
+            let items = targets
+                .into_iter()
+                .map(|(workspace_id, target)| GitRefreshItem {
+                    workspace_id,
+                    cwd: target.cwd,
+                    cache_key_hint: if refresh_repo_discovery {
+                        None
+                    } else {
+                        target.cache_key_hint
+                    },
+                })
+                .collect::<Vec<_>>();
+            state.last_refresh = Some(now);
+            if refresh_repo_discovery {
+                state.last_repo_discovery = Some(now);
+            }
+            (
+                items,
+                state.entries.clone(),
+                state.demand,
+                state.targets_seen_at,
+            )
+        };
+
+        let jobs = plan_git_refresh(items.clone(), &entries);
+        let results = jobs
+            .iter()
+            .map(|job| refresh_git_job(job, demand, now, self.runner.as_ref()))
+            .collect::<Vec<_>>();
+        let cache_keys_by_workspace = jobs
+            .iter()
+            .flat_map(|job| {
+                job.workspace_ids
+                    .iter()
+                    .cloned()
+                    .map(|workspace_id| (workspace_id, job.cache_key.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+        let input_targets = items
+            .into_iter()
+            .map(|item| {
+                let cache_key_hint = cache_keys_by_workspace
+                    .get(&item.workspace_id)
+                    .cloned()
+                    .or(item.cache_key_hint);
+                (
+                    item.workspace_id,
+                    GitRefreshTarget {
+                        cwd: item.cwd,
+                        cache_key_hint,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        let mut state = self.state.lock().expect("git status lock poisoned");
+        if state.targets_seen_at == targets_seen_at {
+            for (workspace_id, target) in &input_targets {
+                state
+                    .targets
+                    .entry(workspace_id.clone())
+                    .or_insert_with(|| target.clone());
+            }
+        }
+        for result in &results {
+            state
+                .entries
+                .insert(result.cache_key.clone(), result.entry.clone());
+        }
+        let mut statuses = state
+            .statuses
+            .iter()
+            .filter(|(workspace_id, _)| {
+                !input_targets.contains_key(*workspace_id)
+                    && state.targets.contains_key(*workspace_id)
+            })
+            .map(|(workspace_id, status)| (workspace_id.clone(), status.clone()))
+            .collect::<HashMap<_, _>>();
+        for result in results {
+            let Some(status) = result.status else {
+                continue;
+            };
+            for workspace_id in result.workspace_ids {
+                let input_matches_current = input_targets
+                    .get(&workspace_id)
+                    .zip(state.targets.get(&workspace_id))
+                    .is_some_and(|(input, current)| input.cwd == current.cwd);
+                if input_matches_current {
+                    statuses.insert(workspace_id, status.clone());
+                }
+            }
+        }
+        let changed = state.statuses != statuses;
+        state.statuses = statuses;
+        changed
+    }
+}
+
+#[derive(Debug)]
+struct GitRefreshResult {
+    cache_key: PathBuf,
+    workspace_ids: Vec<String>,
+    entry: GitStatusCacheEntry,
+    status: Option<WorkspaceGitStatus>,
+}
+
+fn plan_git_refresh(
+    items: Vec<GitRefreshItem>,
+    entries: &HashMap<PathBuf, GitStatusCacheEntry>,
+) -> Vec<GitRefreshJob> {
+    let mut indexes = HashMap::<PathBuf, usize>::new();
+    let mut jobs = Vec::<GitRefreshJob>::new();
+    for item in items {
+        let cache_key = item.cache_key_hint.or_else(|| {
+            git_worktree_info(&item.cwd)
+                .map(|info| info.repo_root)
+                .or_else(|| canonicalize(&item.cwd))
+        });
+        let Some(cache_key) = cache_key else {
+            continue;
+        };
+        if let Some(index) = indexes.get(&cache_key).copied() {
+            if !jobs[index].workspace_ids.contains(&item.workspace_id) {
+                jobs[index].workspace_ids.push(item.workspace_id);
+            }
+            continue;
+        }
+        indexes.insert(cache_key.clone(), jobs.len());
+        jobs.push(GitRefreshJob {
+            cached: entries.get(&cache_key).cloned(),
+            cache_key,
+            workspace_ids: vec![item.workspace_id],
+        });
+    }
+    jobs
+}
+
+fn refresh_git_job(
+    job: &GitRefreshJob,
+    demand: GitRefreshDemand,
+    now: Instant,
+    runner: &dyn GitCommandRunner,
+) -> GitRefreshResult {
+    if let Some(cached) = job.cached.as_ref().filter(|entry| {
+        entry.fingerprint.is_none()
+            && entry
+                .retry_after
+                .is_some_and(|retry_after| retry_after > now)
+    }) {
+        return GitRefreshResult {
+            cache_key: job.cache_key.clone(),
+            workspace_ids: job.workspace_ids.clone(),
+            entry: cached.clone(),
+            status: None,
+        };
+    }
+
+    let Some(fingerprint) = git_status_fingerprint(&job.cache_key, runner) else {
+        return GitRefreshResult {
+            cache_key: job.cache_key.clone(),
+            workspace_ids: job.workspace_ids.clone(),
+            entry: GitStatusCacheEntry {
+                fingerprint: None,
+                retry_after: Some(now + GIT_NON_REPO_RETRY_INTERVAL),
+                ahead_behind: None,
+                ahead_behind_cached: false,
+            },
+            status: None,
+        };
+    };
+
+    let matching_cache = job
+        .cached
+        .as_ref()
+        .filter(|entry| entry.fingerprint.as_ref() == Some(&fingerprint));
+    let can_reuse_counts = matching_cache.is_some_and(|entry| entry.ahead_behind_cached);
+    let ahead_behind = if demand.ahead_behind && !can_reuse_counts {
+        ahead_behind_for_fingerprint(&job.cache_key, &fingerprint, runner)
+    } else {
+        matching_cache.and_then(|entry| entry.ahead_behind)
+    };
+    let ahead_behind_cached = demand.ahead_behind || can_reuse_counts;
+    let status = WorkspaceGitStatus {
+        branch: demand
+            .branch
+            .then(|| fingerprint.branch_name().map(str::to_string))
+            .flatten(),
+        ahead: demand
+            .ahead_behind
+            .then(|| ahead_behind.map(|(ahead, _)| ahead))
+            .flatten(),
+        behind: demand
+            .ahead_behind
+            .then(|| ahead_behind.map(|(_, behind)| behind))
+            .flatten(),
+    };
+    GitRefreshResult {
+        cache_key: job.cache_key.clone(),
+        workspace_ids: job.workspace_ids.clone(),
+        entry: GitStatusCacheEntry {
+            fingerprint: Some(fingerprint),
+            retry_after: None,
+            ahead_behind,
+            ahead_behind_cached,
+        },
+        status: Some(status),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GitWorktreeInfo {
@@ -109,7 +477,7 @@ impl SubprocessGit {
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status,
-                Ok(None) if started.elapsed() < GIT_COMMAND_TIMEOUT => {
+                Ok(None) if started.elapsed() < GIT_SUBPROCESS_TIMEOUT => {
                     std::thread::sleep(GIT_COMMAND_POLL_INTERVAL);
                 }
                 Ok(None) | Err(_) => {
@@ -552,7 +920,7 @@ fn parse_ahead_behind_output(output: &str) -> Option<(usize, usize)> {
 mod tests {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use herdr_compat::api::schema::{AgentStatus, PaneInfo, WorkspaceInfo, WorkspaceWorktreeInfo};
 
@@ -574,6 +942,25 @@ mod tests {
         revisions: HashMap<String, String>,
         counts: Option<(usize, usize)>,
         calls: Mutex<Vec<GitCall>>,
+    }
+
+    impl FakeGitRunner {
+        fn calls(&self) -> Vec<GitCall> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        fn clear_calls(&self) {
+            self.calls.lock().unwrap().clear();
+        }
+
+        fn ahead_behind_calls(&self) -> usize {
+            self.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| matches!(call, GitCall::AheadBehind(_, _, _)))
+                .count()
+        }
     }
 
     impl GitCommandRunner for FakeGitRunner {
@@ -1075,5 +1462,294 @@ mod tests {
             workspace_identity_cwd(&workspace, &panes),
             Some(PathBuf::from("/test/alice"))
         );
+    }
+
+    #[test]
+    fn matching_fingerprint_reuses_cached_counts_without_running_git() {
+        let root = crate::workspace::temp_test_dir("git-status-cache-match");
+        write_fake_tracked_repo(&root);
+        let runner = Arc::new(FakeGitRunner {
+            counts: Some((2, 1)),
+            ..FakeGitRunner::default()
+        });
+        let manager = GitStatusManager::with_runner(runner.clone());
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in("pane-1", "workspace-1", root.to_str(), None)];
+        let now = Instant::now();
+        manager.set_demand(GitRefreshDemand {
+            branch: true,
+            ahead_behind: true,
+        });
+        manager.observe_snapshot_at(&[workspace.clone()], &panes, now);
+        assert!(manager.refresh_once(now));
+        runner.clear_calls();
+
+        manager.observe_snapshot_at(&[workspace], &panes, now + GIT_STATUS_REFRESH_INTERVAL);
+
+        assert!(!manager.refresh_once(now + GIT_STATUS_REFRESH_INTERVAL));
+        assert_eq!(runner.ahead_behind_calls(), 0);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn changed_head_oid_reruns_ahead_behind() {
+        let root = crate::workspace::temp_test_dir("git-status-cache-change");
+        write_fake_tracked_repo(&root);
+        let runner = Arc::new(FakeGitRunner {
+            counts: Some((2, 1)),
+            ..FakeGitRunner::default()
+        });
+        let manager = GitStatusManager::with_runner(runner.clone());
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in("pane-1", "workspace-1", root.to_str(), None)];
+        let now = Instant::now();
+        manager.set_demand(GitRefreshDemand {
+            branch: true,
+            ahead_behind: true,
+        });
+        manager.observe_snapshot_at(&[workspace.clone()], &panes, now);
+        assert!(manager.refresh_once(now));
+        runner.clear_calls();
+        std::fs::write(
+            root.join(".git/refs/heads/main"),
+            "3333333333333333333333333333333333333333\n",
+        )
+        .unwrap();
+        manager.observe_snapshot_at(&[workspace], &panes, now + GIT_STATUS_REFRESH_INTERVAL);
+
+        manager.refresh_once(now + GIT_STATUS_REFRESH_INTERVAL);
+
+        assert_eq!(runner.ahead_behind_calls(), 1);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn non_git_directory_is_cached_as_a_miss_with_retry() {
+        let root = crate::workspace::temp_test_dir("git-status-cache-miss");
+        let runner = Arc::new(FakeGitRunner::default());
+        let manager = GitStatusManager::with_runner(runner.clone());
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in("pane-1", "workspace-1", root.to_str(), None)];
+        let now = Instant::now();
+        manager.set_demand(GitRefreshDemand {
+            branch: true,
+            ahead_behind: true,
+        });
+        manager.observe_snapshot_at(&[workspace.clone()], &panes, now);
+        assert!(!manager.refresh_once(now));
+        let cached_entries = manager.state.lock().unwrap().entries.clone();
+        std::fs::remove_dir_all(&root).unwrap();
+        manager.observe_snapshot_at(&[workspace], &panes, now + GIT_STATUS_REFRESH_INTERVAL);
+
+        assert!(!manager.refresh_once(now + GIT_STATUS_REFRESH_INTERVAL));
+        assert_eq!(runner.calls(), Vec::<GitCall>::new());
+        assert_eq!(manager.state.lock().unwrap().entries, cached_entries);
+    }
+
+    #[test]
+    fn expired_non_git_cache_rediscovers_a_repo_created_in_place() {
+        let root = crate::workspace::temp_test_dir("git-status-cache-created");
+        let runner = Arc::new(FakeGitRunner {
+            counts: Some((2, 1)),
+            ..FakeGitRunner::default()
+        });
+        let manager = GitStatusManager::with_runner(runner.clone());
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in("pane-1", "workspace-1", root.to_str(), None)];
+        let now = Instant::now();
+        manager.set_demand(GitRefreshDemand {
+            branch: true,
+            ahead_behind: true,
+        });
+        manager.observe_snapshot_at(&[workspace.clone()], &panes, now);
+        assert!(!manager.refresh_once(now));
+        write_fake_tracked_repo(&root);
+        let refresh_time = now + GIT_NON_REPO_RETRY_INTERVAL;
+        manager.observe_snapshot_at(&[workspace], &panes, refresh_time);
+
+        assert!(manager.refresh_once(refresh_time));
+        assert_eq!(
+            manager.statuses(),
+            HashMap::from([(
+                "workspace-1".to_string(),
+                WorkspaceGitStatus {
+                    branch: Some("main".to_string()),
+                    ahead: Some(2),
+                    behind: Some(1),
+                },
+            )])
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn plan_git_refresh_collapses_workspaces_sharing_a_repo_root() {
+        let root = crate::workspace::temp_test_dir("git-status-plan-collapse");
+        write_fake_tracked_repo(&root);
+        std::fs::create_dir_all(root.join("a/b")).unwrap();
+        std::fs::create_dir_all(root.join("c")).unwrap();
+        let items = [
+            ("workspace-1", root.clone()),
+            ("workspace-2", root.join("a/b")),
+            ("workspace-3", root.join("c")),
+        ]
+        .map(|(workspace_id, cwd)| GitRefreshItem {
+            workspace_id: workspace_id.to_string(),
+            cwd,
+            cache_key_hint: None,
+        })
+        .to_vec();
+
+        let jobs = plan_git_refresh(items, &HashMap::new());
+
+        assert_eq!(
+            jobs,
+            vec![GitRefreshJob {
+                cache_key: std::fs::canonicalize(&root).unwrap(),
+                workspace_ids: vec![
+                    "workspace-1".to_string(),
+                    "workspace-2".to_string(),
+                    "workspace-3".to_string(),
+                ],
+                cached: None,
+            }]
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn plan_git_refresh_keeps_linked_worktrees_separate() {
+        let root = crate::workspace::temp_test_dir("git-status-plan-linked");
+        let (checkout, _) = write_fake_linked_worktree(&root);
+        let primary = root.join("repo");
+        std::fs::write(primary.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            primary.join(".git/refs/heads/main"),
+            format!("{HEAD_OID}\n"),
+        )
+        .unwrap();
+        let items = vec![
+            GitRefreshItem {
+                workspace_id: "workspace-1".to_string(),
+                cwd: primary.clone(),
+                cache_key_hint: None,
+            },
+            GitRefreshItem {
+                workspace_id: "workspace-2".to_string(),
+                cwd: checkout.clone(),
+                cache_key_hint: None,
+            },
+        ];
+
+        let jobs = plan_git_refresh(items, &HashMap::new());
+
+        assert_eq!(
+            jobs,
+            vec![
+                GitRefreshJob {
+                    cache_key: std::fs::canonicalize(primary).unwrap(),
+                    workspace_ids: vec!["workspace-1".to_string()],
+                    cached: None,
+                },
+                GitRefreshJob {
+                    cache_key: std::fs::canonicalize(checkout).unwrap(),
+                    workspace_ids: vec!["workspace-2".to_string()],
+                    cached: None,
+                },
+            ]
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn plan_git_refresh_honors_cache_key_hints() {
+        let hint = PathBuf::from("/test/repo");
+        let items = vec![GitRefreshItem {
+            workspace_id: "workspace-1".to_string(),
+            cwd: PathBuf::from("/test/repo/deleted"),
+            cache_key_hint: Some(hint.clone()),
+        }];
+
+        let jobs = plan_git_refresh(items, &HashMap::new());
+
+        assert_eq!(
+            jobs,
+            vec![GitRefreshJob {
+                cache_key: hint,
+                workspace_ids: vec!["workspace-1".to_string()],
+                cached: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn periodic_repo_discovery_ignores_cache_key_hints() {
+        let root = crate::workspace::temp_test_dir("git-status-periodic-discovery");
+        write_fake_tracked_repo(&root);
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        let manager = GitStatusManager::with_runner(Arc::new(FakeGitRunner::default()));
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in(
+            "pane-1",
+            "workspace-1",
+            root.join("nested").to_str(),
+            None,
+        )];
+        let now = Instant::now();
+        manager.set_demand(GitRefreshDemand {
+            branch: true,
+            ahead_behind: false,
+        });
+        manager.observe_snapshot_at(&[workspace], &panes, now);
+        {
+            let mut state = manager.state.lock().unwrap();
+            state.targets.get_mut("workspace-1").unwrap().cache_key_hint =
+                Some(root.join("not-a-repo"));
+            state.last_repo_discovery = Some(now);
+        }
+        let refresh_time = now + GIT_REPO_DISCOVERY_REFRESH_INTERVAL;
+        manager.observe_targets_seen_at(refresh_time);
+
+        assert!(manager.refresh_once(refresh_time));
+        assert_eq!(
+            manager.statuses(),
+            HashMap::from([(
+                "workspace-1".to_string(),
+                WorkspaceGitStatus {
+                    branch: Some("main".to_string()),
+                    ahead: None,
+                    behind: None,
+                },
+            )])
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn empty_demand_skips_all_git_work() {
+        let root = crate::workspace::temp_test_dir("git-status-empty-demand");
+        write_fake_tracked_repo(&root);
+        let runner = Arc::new(FakeGitRunner {
+            counts: Some((2, 1)),
+            ..FakeGitRunner::default()
+        });
+        let manager = GitStatusManager::with_runner(runner.clone());
+        let workspace = test_workspace("workspace-1");
+        let panes = vec![test_pane_in("pane-1", "workspace-1", root.to_str(), None)];
+        let now = Instant::now();
+        manager.observe_snapshot_at(&[workspace], &panes, now);
+
+        assert!(!manager.refresh_once(now));
+        assert_eq!(runner.calls(), Vec::<GitCall>::new());
+        assert_eq!(manager.statuses(), HashMap::new());
+        assert_eq!(manager.state.lock().unwrap().entries, HashMap::new());
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
