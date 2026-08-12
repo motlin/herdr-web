@@ -1,8 +1,43 @@
 /* ========================================================================
-   herdr-web - Catppuccin Mocha, Geist UI with system terminal mono
+   herdr-web - Catppuccin Mocha, Geist UI with a bundled Nerd Font mono
    A compact "command deck" for your agents: independently scrolling
    spaces and content sections, terminal on the side / in front.
    ======================================================================== */
+
+/* MesloLGS Nerd Font Mono ships with the app so the powerline separators and
+   icons herdr draws resolve on devices that cannot install fonts (iPadOS).
+   Each face is fetched only when text actually uses it. See web/src/fonts/. */
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNerdFontMono-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNerdFontMono-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNerdFontMono-Italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/MesloLGSNerdFontMono-BoldItalic.woff2") format("woff2");
+}
 
 :root {
   color-scheme: dark;

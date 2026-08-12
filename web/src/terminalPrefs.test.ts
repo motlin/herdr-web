@@ -6,6 +6,7 @@ import {
   MIN_TERMINAL_FONT_SIZE_PX,
   parseTerminalFontFamily,
   parseTerminalFontSizePx,
+  withBundledNerdFont,
 } from "./terminalPrefs";
 
 describe("terminal preferences", () => {
@@ -16,6 +17,21 @@ describe("terminal preferences", () => {
     expect(parseTerminalFontFamily(null)).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
     expect(parseTerminalFontFamily("   ")).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
     expect(parseTerminalFontFamily("a".repeat(513))).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
+  });
+
+  it("leads the default stack with the bundled Nerd Font so glyphs render without a local install", () => {
+    expect(DEFAULT_TERMINAL_FONT_FAMILY).toMatch(/^"MesloLGS Nerd Font Mono",/);
+    expect(DEFAULT_TERMINAL_FONT_FAMILY).toMatch(/monospace$/);
+  });
+
+  it("appends the bundled Nerd Font to an imported stack that omits it", () => {
+    expect(withBundledNerdFont('"MesloLGS Nerd Font Mono", monospace')).toBe(
+      '"MesloLGS Nerd Font Mono", monospace',
+    );
+    expect(withBundledNerdFont("MesloLGS Nerd Font Mono")).toBe("MesloLGS Nerd Font Mono");
+    expect(withBundledNerdFont('"Fira Code", monospace')).toBe(
+      '"Fira Code", monospace, "MesloLGS Nerd Font Mono"',
+    );
   });
 
   it("parses and clamps the terminal font size", () => {

@@ -197,6 +197,7 @@ import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
   parseTerminalFontFamily,
+  withBundledNerdFont,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
 import {
@@ -1461,7 +1462,7 @@ export function App() {
   const applyGhosttyAppearanceSource = useCallback((source: string) => {
     const appearance = terminalAppearanceFromGhosttySource(source);
     if (appearance.fontFamily !== undefined) {
-      setTerminalFontFamily(appearance.fontFamily);
+      setTerminalFontFamily(withBundledNerdFont(appearance.fontFamily));
     }
     if (appearance.fontSizePx !== undefined) {
       setTerminalFontSizePx(appearance.fontSizePx);
