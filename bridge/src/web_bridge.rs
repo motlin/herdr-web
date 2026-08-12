@@ -64,6 +64,8 @@ const DEFAULT_STATIC_DIR: &str = "web/dist";
 const MIN_HERDR_VERSION: (u64, u64, u64) = (0, 8, 0);
 const MIN_HERDR_VERSION_LABEL: &str = "0.8.0";
 const MAX_GHOSTTY_CONFIG_BYTES: u64 = 64 * 1024;
+const GHOSTTY_NO_APPEARANCE_SETTINGS_ERROR: &str =
+    "Ghostty config contains no supported terminal appearance settings";
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 const MAX_NOTES_REQUEST_BYTES: usize = 512 * 1024;
 const MAX_TERMINAL_INPUT_CHUNK_BYTES: usize = 768 * 1024;
@@ -2932,22 +2934,29 @@ async fn ghostty_config_handler(
 }
 
 fn load_ghostty_config() -> Result<GhosttyConfigResponse, BridgeError> {
+    let mut found_config = false;
     for path in ghostty_config_paths() {
         let metadata = match std::fs::metadata(&path) {
             Ok(metadata) => metadata,
             Err(err) if err.kind() == ErrorKind::NotFound => continue,
             Err(err) => return Err(BridgeError::Io(err)),
         };
+        found_config = true;
         if metadata.len() > MAX_GHOSTTY_CONFIG_BYTES {
             return Err(BridgeError::BadRequest(
                 "Ghostty config exceeds the 64 KiB import limit".to_string(),
             ));
         }
         let source = std::fs::read_to_string(path)?;
-        return Ok(GhosttyConfigResponse {
-            version: 1,
-            source: ghostty_terminal_appearance_source(&source)?,
-        });
+        let Some(source) = ghostty_terminal_appearance_source_if_present(&source) else {
+            continue;
+        };
+        return Ok(GhosttyConfigResponse { version: 1, source });
+    }
+    if found_config {
+        return Err(BridgeError::BadRequest(
+            GHOSTTY_NO_APPEARANCE_SETTINGS_ERROR.to_string(),
+        ));
     }
     Err(BridgeError::BadRequest(
         "Ghostty config was not found in a standard config directory".to_string(),
@@ -2972,7 +2981,7 @@ fn ghostty_config_paths() -> Vec<PathBuf> {
     paths
 }
 
-fn ghostty_terminal_appearance_source(source: &str) -> Result<String, BridgeError> {
+fn ghostty_terminal_appearance_source_if_present(source: &str) -> Option<String> {
     let mut appearance_lines = Vec::new();
     for raw_line in source.lines() {
         let line = raw_line.trim();
@@ -2983,12 +2992,7 @@ fn ghostty_terminal_appearance_source(source: &str) -> Result<String, BridgeErro
             appearance_lines.push(line);
         }
     }
-    if appearance_lines.is_empty() {
-        return Err(BridgeError::BadRequest(
-            "Ghostty config contains no supported terminal appearance settings".to_string(),
-        ));
-    }
-    Ok(appearance_lines.join("\n"))
+    (!appearance_lines.is_empty()).then(|| appearance_lines.join("\n"))
 }
 
 fn ghostty_terminal_appearance_key(key: &str) -> bool {
@@ -4602,7 +4606,7 @@ mod tests {
 
     #[test]
     fn ghostty_config_import_exposes_only_terminal_appearance_settings() {
-        let source = ghostty_terminal_appearance_source(
+        let source = ghostty_terminal_appearance_source_if_present(
             r#"
                 # Example config
                 font-family = Example Mono
@@ -4627,15 +4631,48 @@ mod tests {
 
     #[test]
     fn ghostty_config_import_rejects_configs_without_appearance_settings() {
-        let result = ghostty_terminal_appearance_source(
+        let result = ghostty_terminal_appearance_source_if_present(
             "shell-integration-features = no-title\nkeybind = shift+enter=text:\\n",
         );
 
-        assert!(matches!(
-            result,
-            Err(BridgeError::BadRequest(message))
-                if message == "Ghostty config contains no supported terminal appearance settings"
-        ));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn ghostty_config_import_skips_existing_configs_without_appearance_settings() {
+        let _guard = crate::session::TEST_ENV_LOCK.lock().unwrap();
+        let test_home = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("test-data")
+            .join(format!("ghostty-config-paths-{}", std::process::id()));
+        let stub_path = test_home.join(".config").join("ghostty").join("config");
+        let populated_path = test_home
+            .join("Library")
+            .join("Application Support")
+            .join("com.mitchellh.ghostty")
+            .join("config");
+        let _ = std::fs::remove_dir_all(&test_home);
+        std::fs::create_dir_all(stub_path.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(populated_path.parent().unwrap()).unwrap();
+        std::fs::write(&stub_path, "shell-integration-features = no-title\n").unwrap();
+        std::fs::write(&populated_path, "font-family = Example Mono\n").unwrap();
+
+        let previous_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+        let previous_home = std::env::var("HOME").ok();
+        std::env::remove_var("XDG_CONFIG_HOME");
+        std::env::set_var("HOME", &test_home);
+        let result = load_ghostty_config();
+        restore_env("XDG_CONFIG_HOME", previous_config_home);
+        restore_env("HOME", previous_home);
+        std::fs::remove_dir_all(&test_home).unwrap();
+
+        assert_eq!(
+            result.expect("the populated fallback config should load"),
+            GhosttyConfigResponse {
+                version: 1,
+                source: "font-family = Example Mono".to_string(),
+            }
+        );
     }
 
     #[test]

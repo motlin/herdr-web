@@ -88,6 +88,8 @@
 - Fixed Ghostty appearance imports accepting font and color values that could not be persisted.
 - Fixed Ghostty appearance imports producing invalid CSS for font family names that require
   quotes.
+- Fixed Ghostty appearance imports stopping at a stub config before checking later standard config
+  paths for usable terminal settings.
 - Fixed partial Ghostty theme imports falling back to unreadable built-in colors instead of the
   app's default palette.
 - Fixed Escape in terminal appearance text fields closing the entire settings dialog.
