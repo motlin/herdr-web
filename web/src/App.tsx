@@ -182,6 +182,7 @@ import {
   parseTerminalInputTransport,
 } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
+import { useTerminalInputInjectionSource } from "./terminalInputInjection";
 import {
   DEFAULT_TERMINAL_OUTPUT_COALESCE_MS,
   parseTerminalOutputCoalesceMs,
@@ -264,11 +265,6 @@ type MobileNotesScreen = "list" | "editor";
 type ScopedWorkspaceRef = {
   bridgeId: BridgeId;
   workspaceId: string;
-};
-type TerminalInputInjection = {
-  paneId: string;
-  token: number;
-  data: string;
 };
 type SpaceReorderMode = ScopedWorkspaceRef;
 const SPACE_REORDER_INSTRUCTIONS_ID = "space-reorder-instructions";
@@ -1173,8 +1169,8 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [refitToken, setRefitToken] = useState(0);
   const [terminalFocusToken, setTerminalFocusToken] = useState(0);
-  const [terminalInputInjection, setTerminalInputInjection] =
-    useState<TerminalInputInjection | null>(null);
+  const { injection: terminalInputInjection, injectTerminalInput } =
+    useTerminalInputInjectionSource();
   const [herdrKeysSource, setHerdrKeysSource] = useState(initialPrefs.herdrKeysSource);
   const herdrKeys = useMemo(() => parseHerdrKeysSource(herdrKeysSource), [herdrKeysSource]);
   const prefixModeStateRef = useRef<PrefixModeState>("idle");
@@ -3244,11 +3240,7 @@ export function App() {
           event.stopPropagation();
           const emission = prefixTransition.emission;
           if (emission?.type === "literal" && selectedPane) {
-            setTerminalInputInjection((current) => ({
-              paneId: selectedPane.pane_id,
-              token: (current?.token ?? 0) + 1,
-              data: emission.data,
-            }));
+            injectTerminalInput(selectedPane.pane_id, emission.data);
           } else if (emission?.type === "action") {
             dispatchPrefixAction(emission.action, emission.index);
           }

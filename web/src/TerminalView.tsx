@@ -36,6 +36,7 @@ import {
 } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
 import { DEFAULT_TERMINAL_OUTPUT_COALESCE_MS } from "./terminalOutputCoalescing";
+import { useInjectedTerminalInput } from "./terminalInputInjection";
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
@@ -1347,14 +1348,7 @@ export function TerminalView({
     return true;
   }, [flushQueuedTerminalInput, showUploadStatus]);
 
-  const injectInputToken = injectInput?.token ?? 0;
-  const injectInputData = injectInput?.data ?? "";
-  useEffect(() => {
-    if (injectInputToken === 0) {
-      return;
-    }
-    enqueueTerminalInput([injectInputData]);
-  }, [enqueueTerminalInput, injectInputData, injectInputToken]);
+  useInjectedTerminalInput(injectInput, enqueueTerminalInput);
 
   return (
     <section
