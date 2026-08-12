@@ -456,6 +456,7 @@ button {
 /* ----------------------------------------------------------------- list */
 
 .list {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
@@ -520,6 +521,16 @@ button {
 .sec {
   display: flex;
   flex-direction: column;
+}
+
+/* Tabs and notes are web-only views; they float over the spaces + agents list
+   instead of replacing it, so the sidebar keeps matching the herdr TUI. */
+.sidebar-overlay-sec {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow-y: auto;
+  background: var(--sidebar-bg);
 }
 
 .sec-head {

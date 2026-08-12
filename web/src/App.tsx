@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Columns3,
   Link2,
   ListCollapse,
   ListRestart,
@@ -246,6 +247,9 @@ type LoadState = "loading" | "ready" | "error";
 type Scope = "space" | "all";
 type HostScope = "selected" | "all";
 type SidebarView = "agents" | "tabs" | "notes";
+// The sidebar itself always mirrors the herdr TUI's spaces + agents sections; tabs and
+// notes are web-only views that open over the list from the header icons instead.
+type SidebarOverlayView = "tabs" | "notes" | null;
 type AgentSort = "attention" | "status" | "workspace" | "lastStatusChange";
 type AgentGroup = "none" | "host" | "workspace" | "hostWorkspace";
 type SpaceGroup = "none" | "host";
@@ -1039,6 +1043,7 @@ export function App() {
   const [hostScope, setHostScope] = useState<HostScope>(initialPrefs.hostScope);
   const [scope, setScope] = useState<Scope>(initialPrefs.scope);
   const [sidebarView, setSidebarView] = useState<SidebarView>(initialPrefs.sidebarView);
+  const [sidebarOverlayView, setSidebarOverlayView] = useState<SidebarOverlayView>(null);
   const [agentSort, setAgentSort] = useState<AgentSort>(initialPrefs.agentSort);
   const [agentGroup, setAgentGroup] = useState<AgentGroup>(initialPrefs.agentGroup);
   const [combineMatchingWorkspaceNames, setCombineMatchingWorkspaceNames] = useState(
@@ -4157,8 +4162,8 @@ export function App() {
           activeWorkspacesByBridgeId={activeWorkspacesByBridgeId}
           selectedPane={selectedPane}
           onHostScope={setHostScope}
-          onScope={setScope}
-          onSidebarView={setSidebarView}
+          sidebarOverlayView={sidebarOverlayView}
+          onSidebarOverlayView={setSidebarOverlayView}
           onSelectNote={selectNote}
           onCreateNote={() => void createDetachedBridgeNote()}
           onAgentPinnedOnly={setAgentPinnedOnly}
@@ -5250,7 +5255,7 @@ export function buildVisibleAgentPaneEntries(
     scopedWorkspaces.flatMap((entry) => {
       const sorted = sortAgentPanes(
         entry.snapshot.panes.filter(
-          (pane) => pane.workspace_id === entry.workspace.workspace_id && isAgentPane(pane),
+          (pane) => pane.workspace_id === entry.workspace.workspace_id,
         ),
         sort,
         entry.snapshot,
@@ -6475,8 +6480,8 @@ function Switcher({
   activeWorkspacesByBridgeId,
   selectedPane,
   onHostScope,
-  onScope,
-  onSidebarView,
+  sidebarOverlayView,
+  onSidebarOverlayView,
   onSelectNote,
   onCreateNote,
   onAgentPinnedOnly,
@@ -6534,8 +6539,8 @@ function Switcher({
   activeWorkspacesByBridgeId: Record<string, string>;
   selectedPane: PaneInfo | null;
   onHostScope: (scope: HostScope) => void;
-  onScope: (scope: Scope) => void;
-  onSidebarView: (view: SidebarView) => void;
+  sidebarOverlayView: SidebarOverlayView;
+  onSidebarOverlayView: (view: SidebarOverlayView) => void;
   onSelectNote: (bridgeId: BridgeId, noteId: string) => void;
   onCreateNote: () => void;
   onAgentPinnedOnly: (pinnedOnly: boolean) => void;
@@ -6678,6 +6683,28 @@ function Switcher({
       selectedBridgeId,
     ],
   );
+  // The agents section mirrors the herdr TUI, which enumerates every pane in every
+  // workspace, so it ignores the Space/All scope the other sidebar sections honour.
+  const agentScopedWorkspaces = useMemo<ScopedWorkspace[]>(
+    () =>
+      buildVisibleScopedWorkspaces(
+        bridgeViews,
+        selectedBridgeId,
+        hostScope,
+        "all",
+        activeSpace,
+        activeWorkspacesByBridgeId,
+        multiHostSpaceSelection,
+      ),
+    [
+      activeSpace,
+      activeWorkspacesByBridgeId,
+      bridgeViews,
+      hostScope,
+      multiHostSpaceSelection,
+      selectedBridgeId,
+    ],
+  );
   const panes = scopedWorkspaces.flatMap((entry) =>
     entry.snapshot.panes.filter((pane) => pane.workspace_id === entry.workspace.workspace_id),
   );
@@ -6724,7 +6751,7 @@ function Switcher({
 
   const agentPanes = useMemo<ScopedAgentPane[]>(() => {
     return buildVisibleAgentPaneEntries(
-      scopedWorkspaces,
+      agentScopedWorkspaces,
       bridgeViews,
       hostScope,
       agentSort === "lastStatusChange" ? agentGroup : "none",
@@ -6745,7 +6772,7 @@ function Switcher({
     combineWorkspaceGroups,
     hostScope,
     pinnedAgentKeys,
-    scopedWorkspaces,
+    agentScopedWorkspaces,
   ]);
 
   const agentGroups = useMemo(() => {
@@ -7668,6 +7695,16 @@ function Switcher({
         <button
           className="icon-btn"
           type="button"
+          aria-label="Tabs"
+          title="Tabs"
+          data-active={sidebarOverlayView === "tabs" ? "true" : "false"}
+          onClick={() => onSidebarOverlayView(sidebarOverlayView === "tabs" ? null : "tabs")}
+        >
+          <Columns3 size={16} />
+        </button>
+        <button
+          className="icon-btn"
+          type="button"
           aria-label="Settings"
           title={`Settings; bridge: ${bridgeLabel}`}
           data-spin={capabilityState === "probing" ? "" : undefined}
@@ -7724,53 +7761,6 @@ function Switcher({
         ) : null}
       </div>
 
-      <div className="sidebar-mode" role="group" aria-label="Sidebar view">
-        <button
-          type="button"
-          data-on={sidebarView === "agents"}
-          aria-pressed={sidebarView === "agents"}
-          onClick={() => onSidebarView("agents")}
-        >
-          Agents
-        </button>
-        <button
-          type="button"
-          data-on={sidebarView === "tabs"}
-          aria-pressed={sidebarView === "tabs"}
-          onClick={() => onSidebarView("tabs")}
-        >
-          Tabs
-        </button>
-        {notesEnabled ? (
-          <button
-            type="button"
-            data-on={sidebarView === "notes"}
-            aria-pressed={sidebarView === "notes"}
-            onClick={() => onSidebarView("notes")}
-          >
-            Notes
-          </button>
-        ) : null}
-      </div>
-      <div className="sidebar-scope" role="group" aria-label="Sidebar scope">
-        <button
-          type="button"
-          data-on={scope === "space"}
-          aria-pressed={scope === "space"}
-          onClick={() => onScope("space")}
-        >
-          Space
-        </button>
-        <button
-          type="button"
-          data-on={scope === "all"}
-          aria-pressed={scope === "all"}
-          onClick={() => onScope("all")}
-        >
-          All
-        </button>
-      </div>
-
       <div className="list">
         {!hasListSnapshot ? (
           <div className="empty">
@@ -7808,7 +7798,7 @@ function Switcher({
         ) : (
           <>
             {/* SPACES ---------------------------------------------------- */}
-            {scope === "space" && hostBridgeViews.some((view) => view.snapshot) ? (
+            {hostBridgeViews.some((view) => view.snapshot) ? (
             <section
               className="sec"
               data-sidebar-section="spaces"
@@ -7894,31 +7884,18 @@ function Switcher({
             </section>
             ) : null}
 
-            {/* PANES ----------------------------------------------------- */}
-            {notesViewActive ||
-            (hostScope === "all" ? hasListSnapshot : snapshot && snapshot.workspaces.length > 0) ? (
+            {/* AGENTS ---------------------------------------------------- */}
+            {(hostScope === "all"
+              ? hasListSnapshot
+              : Boolean(snapshot && snapshot.workspaces.length > 0)) ? (
             <section
               className="sec"
               data-sidebar-section="content"
-              aria-label={sidebarContentSectionLabel(sidebarView, notesViewActive)}
+              aria-label="Agents"
               tabIndex={0}
             >
               <div className="sec-head">
-                <span className="sec-label">
-                  {sidebarView === "agents"
-                    ? scope === "all"
-                      ? "all agents"
-                      : "space agents"
-                    : notesViewActive
-                      ? scope === "all"
-                        ? "all notes"
-                        : "space notes"
-                    : scope === "all"
-                      ? "all tabs"
-                      : hostScope === "all"
-                        ? "space tabs"
-                        : (activeSpace?.label ?? "tabs")}
-                </span>
+                <span className="sec-label">agents</span>
                 <span className="sec-rule" />
                 {canCreateTabFromHeader ? (
                   <button
@@ -8012,28 +7989,53 @@ function Switcher({
                 ) : null}
               </div>
 
-              {notesViewActive ? (
+              {agentPanes.length === 0 && disconnectedBridgeViews.length === 0 ? (
+                <div className="empty">
+                  <strong>
+                    {emptyAgentListTitle(effectiveAgentPinnedOnly, agentActiveOnly)}
+                  </strong>
+                  <span>
+                    {effectiveAgentPinnedOnly || agentActiveOnly
+                      ? ""
+                      : "No workspace has panes yet."}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  {renderDisconnectedBridgeRows()}
+                  {agentGroup !== "none"
+                    ? renderAgentGroupRows()
+                    : agentPanes.map((entry, index) => renderAgentRow(entry, index))}
+                </>
+              )}
+            </section>
+            ) : null}
+
+            {/* TABS / NOTES OVERLAY -------------------------------------- */}
+            {sidebarOverlayView ? (
+            <section
+              className="sec sidebar-overlay-sec"
+              data-sidebar-section="overlay"
+              aria-label={sidebarOverlayView === "notes" ? "Notes" : "Tabs"}
+              tabIndex={0}
+            >
+              <div className="sec-head">
+                <span className="sec-label">
+                  {sidebarOverlayView === "notes" ? "notes" : "tabs"}
+                </span>
+                <span className="sec-rule" />
+                <button
+                  className="sec-add"
+                  type="button"
+                  aria-label="Close"
+                  title="Close"
+                  onClick={() => onSidebarOverlayView(null)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {sidebarOverlayView === "notes" ? (
                 renderNoteRows()
-              ) : sidebarView === "agents" ? (
-                agentPanes.length === 0 && disconnectedBridgeViews.length === 0 ? (
-                  <div className="empty">
-                    <strong>
-                      {emptyAgentListTitle(effectiveAgentPinnedOnly, agentActiveOnly)}
-                    </strong>
-                    <span>
-                      {effectiveAgentPinnedOnly || agentActiveOnly
-                        ? ""
-                        : "Open the Tabs view for plain panes."}
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    {renderDisconnectedBridgeRows()}
-                    {agentGroup !== "none"
-                      ? renderAgentGroupRows()
-                      : agentPanes.map((entry, index) => renderAgentRow(entry, index))}
-                  </>
-                )
               ) : spaceGroups.every((group) => group.tabs.length === 0) ? (
                 disconnectedBridgeViews.length > 0 ? (
                   <>{renderDisconnectedBridgeRows()}</>

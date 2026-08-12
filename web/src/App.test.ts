@@ -304,6 +304,34 @@ describe("App multi-bridge helpers", () => {
     ).toEqual(["bridge-a:pane-a", "bridge-b:pane-b"]);
   });
 
+  it("lists plain panes alongside agent panes so the sidebar matches the herdr TUI", () => {
+    const plainPane = pane("pane-plain", "workspace-a", "tab-a", "unknown");
+    const bridgeViews = [
+      bridgeView(
+        "bridge-a",
+        multiPaneSnapshot(
+          [workspace("workspace-a", 1)],
+          [pane("pane-agent", "workspace-a", "tab-a", "working"), plainPane],
+        ),
+      ),
+    ];
+
+    const scopedWorkspaces = buildVisibleScopedWorkspaces(
+      bridgeViews,
+      "bridge-a",
+      "all",
+      "all",
+      null,
+      {},
+    );
+
+    expect(
+      buildVisibleAgentPaneEntries(scopedWorkspaces, bridgeViews, "all", "none", "workspace").map(
+        (item) => item.pane.pane_id,
+      ),
+    ).toEqual(["pane-agent", "pane-plain"]);
+  });
+
   it("limits Space scope to one host when multi-host Space selection is disabled", () => {
     const bridgeViews = [
       bridgeView(
