@@ -23,6 +23,9 @@ import {
   menuItems,
   nextVisibleAgentPaneEntry,
   nextVisibleTabEntry,
+  prefixAgentPaneAtIndex,
+  prefixModeInputFromKeyboardEvent,
+  prefixTabAtIndex,
   resolveInitialSelectedBridgeId,
   resolveEffectiveSpaceGroup,
   resolveCreatedPaneNoteForTarget,
@@ -1483,6 +1486,123 @@ describe("App multi-bridge helpers", () => {
     expect(nextVisibleTabEntry(entries, -1, -1).tab.tab_id).toBe("tab-b");
     expect(nextVisibleTabEntry(entries, 0, -1).tab.tab_id).toBe("tab-b");
     expect(nextVisibleTabEntry(entries, 1, 1).tab.tab_id).toBe("tab-a");
+  });
+
+  it("builds prefix input from a configured key and the ctrl+b terminal byte", () => {
+    const backtick = prefixModeInputFromKeyboardEvent({
+      key: "`",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+    });
+    const controlB = prefixModeInputFromKeyboardEvent({
+      key: "b",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+    });
+    const shiftedX = prefixModeInputFromKeyboardEvent({
+      key: "X",
+      ctrlKey: false,
+      shiftKey: true,
+      altKey: false,
+      metaKey: false,
+    });
+
+    expect({ backtick, controlB, shiftedX }).toStrictEqual({
+      backtick: {
+        chord: {
+          key: "`",
+          ctrl: false,
+          shift: false,
+          alt: false,
+          meta: false,
+        },
+        data: "`",
+      },
+      controlB: {
+        chord: {
+          key: "b",
+          ctrl: true,
+          shift: false,
+          alt: false,
+          meta: false,
+        },
+        data: "\u0002",
+      },
+      shiftedX: {
+        chord: {
+          key: "x",
+          ctrl: false,
+          shift: true,
+          alt: false,
+          meta: false,
+        },
+        data: "X",
+      },
+    });
+  });
+
+  it("indexes prefix tab switching by snapshot order within the active space", () => {
+    const snapshot = multiPaneSnapshot(
+      [workspace("workspace-a", 1), workspace("workspace-b", 2)],
+      [
+        pane("pane-a", "workspace-a", "tab-z"),
+        pane("pane-b", "workspace-b", "tab-other"),
+        pane("pane-c", "workspace-a", "tab-a"),
+      ],
+    );
+
+    expect({
+      first: prefixTabAtIndex(snapshot, "workspace-a", 1)?.tab_id ?? null,
+      second: prefixTabAtIndex(snapshot, "workspace-a", 2)?.tab_id ?? null,
+      missing: prefixTabAtIndex(snapshot, "workspace-a", 3)?.tab_id ?? null,
+    }).toStrictEqual({
+      first: "tab-z",
+      second: "tab-a",
+      missing: null,
+    });
+  });
+
+  it("indexes prefix agent focus by visible agent order", () => {
+    const bridgeViews = [
+      bridgeView(
+        "bridge-a",
+        multiPaneSnapshot(
+          [workspace("workspace-a", 1)],
+          [
+            pane("agent-a", "workspace-a", "tab-a", "working"),
+            pane("agent-b", "workspace-a", "tab-b", "idle"),
+          ],
+        ),
+      ),
+    ];
+    const entries = buildVisibleAgentPaneEntries(
+      buildVisibleScopedWorkspaces(
+        bridgeViews,
+        "bridge-a",
+        "selected",
+        "all",
+        null,
+        {},
+      ),
+      bridgeViews,
+      "selected",
+      "none",
+      "workspace",
+    );
+
+    expect({
+      first: prefixAgentPaneAtIndex(entries, 1)?.pane.pane_id ?? null,
+      second: prefixAgentPaneAtIndex(entries, 2)?.pane.pane_id ?? null,
+      missing: prefixAgentPaneAtIndex(entries, 3)?.pane.pane_id ?? null,
+    }).toStrictEqual({
+      first: "agent-a",
+      second: "agent-b",
+      missing: null,
+    });
   });
 
   it("keeps unresolved notes visible in space scope and filters archived/deleted notes explicitly", () => {

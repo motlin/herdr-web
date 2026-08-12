@@ -102,6 +102,8 @@ type Props = {
   accessibilityLabel?: string;
   /** Whether this is the currently selected terminal in a split. */
   selected?: boolean;
+  /** Incrementing token and terminal data requested by the parent. */
+  injectInput?: { token: number; data: string } | null;
 };
 
 type UploadCandidate = {
@@ -168,6 +170,7 @@ export function TerminalView({
   terminalScreenReaderText = false,
   accessibilityLabel = "Terminal",
   selected = false,
+  injectInput = null,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLElement | null>(null);
@@ -1312,7 +1315,7 @@ export function TerminalView({
     void uploadAndInsert(files);
   };
 
-  const enqueueTerminalInput = (parts: string[]) => {
+  const enqueueTerminalInput = useCallback((parts: string[]) => {
     if (terminalInputBlockedRef.current) {
       showUploadStatus("Terminal detached", 2500);
       return false;
@@ -1324,7 +1327,16 @@ export function TerminalView({
     inputQueueRef.current.push(...filteredParts);
     flushQueuedTerminalInput();
     return true;
-  };
+  }, [flushQueuedTerminalInput, showUploadStatus]);
+
+  const injectInputToken = injectInput?.token ?? 0;
+  const injectInputData = injectInput?.data ?? "";
+  useEffect(() => {
+    if (injectInputToken === 0) {
+      return;
+    }
+    enqueueTerminalInput([injectInputData]);
+  }, [enqueueTerminalInput, injectInputData, injectInputToken]);
 
   return (
     <section

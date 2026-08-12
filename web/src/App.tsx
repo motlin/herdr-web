@@ -89,6 +89,8 @@ import type { LaunchTarget } from "./launch";
 import { fetchLauncherPresets, supportsLauncherPresets } from "./launcherPresets";
 import type { LauncherPresetsResponse } from "./launcherPresets";
 import { fetchWithTimeout } from "./fetchWithTimeout";
+import { parseHerdrKeysSource } from "./herdrKeys";
+import type { HerdrKeyAction } from "./herdrKeys";
 import {
   DEFAULT_MOBILE_COMMAND_ENTER_NEWLINE,
   DEFAULT_MOBILE_COMMAND_EXPANDING_INPUT,
@@ -141,6 +143,8 @@ import {
   trapFocusWithin,
   useFocusReturn,
 } from "./overlayFocus";
+import { transitionPrefixMode } from "./prefixMode";
+import type { PrefixModeInput, PrefixModeState } from "./prefixMode";
 import { createSnapshotRefreshController } from "./refreshCoordinator";
 import { TerminalView } from "./TerminalView";
 import {
@@ -236,6 +240,11 @@ type MobileNotesScreen = "list" | "editor";
 type ScopedWorkspaceRef = {
   bridgeId: BridgeId;
   workspaceId: string;
+};
+type TerminalInputInjection = {
+  paneId: string;
+  token: number;
+  data: string;
 };
 type SpaceReorderMode = ScopedWorkspaceRef;
 const SPACE_REORDER_INSTRUCTIONS_ID = "space-reorder-instructions";
@@ -468,6 +477,7 @@ const MAX_NOTES_PANEL_WIDTH = 840;
 const DEFAULT_NOTES_LIST_PANE_WIDTH = 240;
 const MIN_NOTES_LIST_PANE_WIDTH = 200;
 const MAX_NOTES_LIST_PANE_WIDTH = 420;
+const DEFAULT_HERDR_KEYS = parseHerdrKeysSource("");
 
 function readDisplayPrefs(): DisplayPrefs {
   const fallback: DisplayPrefs = {
@@ -1123,6 +1133,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [refitToken, setRefitToken] = useState(0);
   const [terminalFocusToken, setTerminalFocusToken] = useState(0);
+  const [terminalInputInjection, setTerminalInputInjection] =
+    useState<TerminalInputInjection | null>(null);
+  const prefixModeStateRef = useRef<PrefixModeState>("idle");
   const isCompactLayout = useIsCompactLayout();
   const isTouchInput = useIsTouchInput();
   const showMobileKeyboardHideRefit = isNativeAndroid();
@@ -2932,7 +2945,187 @@ export function App() {
   };
 
   useEffect(() => {
+    const shortcutAgentEntries = () => {
+      const combineWorkspaceGroupsForShortcut =
+        combineMatchingWorkspaceNames && hostScope === "all" && agentGroup === "workspace";
+      return filterCollapsedAgentPaneEntries(
+        buildVisibleAgentPaneEntries(
+          buildVisibleScopedWorkspaces(
+            bridgeViews,
+            selectedRuntime?.id ?? null,
+            hostScope,
+            scope,
+            activeSpace,
+            activeWorkspacesByBridgeId,
+            multiHostSpaceSelection,
+          ),
+          bridgeViews,
+          hostScope,
+          agentGroup,
+          agentSort,
+          pinnedAgentKeys,
+          effectiveAgentPinnedOnly,
+          agentActivityTransitions,
+          agentActiveOnly,
+          combineWorkspaceGroupsForShortcut,
+        ),
+        agentGroup,
+        hostScope,
+        combineWorkspaceGroupsForShortcut,
+        collapsedSidebarGroupKeys,
+      );
+    };
+    const shortcutTabEntries = () => {
+      const combineWorkspaceGroupsForShortcut =
+        combineMatchingWorkspaceNames && hostScope === "all" && agentGroup === "workspace";
+      return filterCollapsedTabEntries(
+        buildVisibleTabEntries(
+          buildVisibleScopedWorkspaces(
+            bridgeViews,
+            selectedRuntime?.id ?? null,
+            hostScope,
+            scope,
+            activeSpace,
+            activeWorkspacesByBridgeId,
+            multiHostSpaceSelection,
+          ),
+          bridgeViews,
+          hostScope,
+          agentGroup,
+          pinnedAgentKeys,
+          sidebarView === "tabs" && effectiveAgentPinnedOnly,
+          sidebarView === "tabs" && agentFeaturesInTabs,
+          agentSort,
+          agentActivityTransitions,
+          sidebarView === "tabs" && agentFeaturesInTabs && agentActiveOnly,
+          combineWorkspaceGroupsForShortcut,
+        ),
+        agentGroup,
+        hostScope,
+        combineWorkspaceGroupsForShortcut,
+        collapsedSidebarGroupKeys,
+      );
+    };
+    const dispatchPrefixAction = (action: HerdrKeyAction, index?: number) => {
+      if (action === "new_tab") {
+        if (selectedRuntime && activeSpace) {
+          setLaunchTarget({
+            mode: "tab",
+            workspaceId: activeSpace.workspace_id,
+            bridgeId: selectedRuntime.id,
+          });
+        }
+        return;
+      }
+      if (action === "close_pane") {
+        if (selectedRuntime && selectedPane) {
+          setDialog({
+            mode: "close",
+            kind: "pane",
+            bridgeId: selectedRuntime.id,
+            id: selectedPane.pane_id,
+            label: paneTitle(selectedPane),
+          });
+        }
+        return;
+      }
+      if (action === "close_tab") {
+        if (!snapshot || !selectedRuntime) {
+          return;
+        }
+        const tab = activeShortcutTab(snapshot, activeSpace, selectedPane);
+        if (tab) {
+          setDialog({
+            mode: "close",
+            kind: "tab",
+            bridgeId: selectedRuntime.id,
+            id: tab.tab_id,
+            label: displayTabLabel(tab, snapshot.panes),
+          });
+        }
+        return;
+      }
+      if (action === "switch_tab") {
+        if (!snapshot || !activeSpace || !selectedRuntime || !selectedCommands || !index) {
+          return;
+        }
+        const tab = prefixTabAtIndex(snapshot, activeSpace.workspace_id, index);
+        if (tab) {
+          void exec(
+            selectedRuntime,
+            () => selectedCommands.focusTab(tab.tab_id),
+            true,
+          ).then((ok) => ok && requestTerminalFocus());
+        }
+        return;
+      }
+      if (action === "focus_agent") {
+        if (!index) {
+          return;
+        }
+        const entry = prefixAgentPaneAtIndex(shortcutAgentEntries(), index);
+        if (entry) {
+          focusPane(entry.bridgeId, entry.pane);
+        }
+        return;
+      }
+      const tabs = shortcutTabEntries();
+      if (tabs.length === 0) {
+        return;
+      }
+      const selectedBridgeIdForShortcut = selectedRuntime?.id ?? null;
+      const currentIndex = tabs.findIndex((entry) => {
+        if (!selectedBridgeIdForShortcut || entry.bridgeId !== selectedBridgeIdForShortcut) {
+          return false;
+        }
+        if (selectedPane) {
+          return entry.tab.tab_id === selectedPane.tab_id;
+        }
+        return (
+          activeSpace?.workspace_id === entry.workspace.workspace_id &&
+          entry.tab.tab_id === activeSpace.active_tab_id
+        );
+      });
+      const step = action === "next_tab" ? 1 : -1;
+      const next = nextVisibleTabEntry(tabs, currentIndex, step);
+      focusTab(next.bridgeId, next.tab.tab_id);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        isShortcutTextEntryTarget(event.target) ||
+        busy ||
+        menu ||
+        dialog ||
+        launchTarget ||
+        hasOpenModal()
+      ) {
+        return;
+      }
+
+      const prefixTransition = transitionPrefixMode(
+        prefixModeStateRef.current,
+        prefixModeInputFromKeyboardEvent(event),
+        DEFAULT_HERDR_KEYS.prefix,
+        DEFAULT_HERDR_KEYS.bindings,
+      );
+      prefixModeStateRef.current = prefixTransition.state;
+      if (prefixTransition.swallow) {
+        event.preventDefault();
+        event.stopPropagation();
+        const emission = prefixTransition.emission;
+        if (emission?.type === "literal" && selectedPane) {
+          setTerminalInputInjection((current) => ({
+            paneId: selectedPane.pane_id,
+            token: (current?.token ?? 0) + 1,
+            data: emission.data,
+          }));
+        } else if (emission?.type === "action") {
+          dispatchPrefixAction(emission.action, emission.index);
+        }
+        return;
+      }
+
       const navigationShortcut = isAppNavigationShortcut(event);
       const closeTabShortcut = isCloseTabShortcut(event);
       const newTabShortcut = isNewTabShortcut(event);
@@ -2948,13 +3141,7 @@ export function App() {
           !newTabShortcut &&
           !splitDirection &&
           !paneFocusDirection &&
-          paneCycleStep === 0) ||
-        isShortcutTextEntryTarget(event.target) ||
-        busy ||
-        menu ||
-        dialog ||
-        launchTarget ||
-        hasOpenModal()
+          paneCycleStep === 0)
       ) {
         return;
       }
@@ -3077,34 +3264,7 @@ export function App() {
       }
 
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        const combineWorkspaceGroupsForShortcut =
-          combineMatchingWorkspaceNames && hostScope === "all" && agentGroup === "workspace";
-        const agentEntries = filterCollapsedAgentPaneEntries(
-          buildVisibleAgentPaneEntries(
-            buildVisibleScopedWorkspaces(
-              bridgeViews,
-              selectedRuntime?.id ?? null,
-              hostScope,
-              scope,
-              activeSpace,
-              activeWorkspacesByBridgeId,
-              multiHostSpaceSelection,
-            ),
-            bridgeViews,
-            hostScope,
-            agentGroup,
-            agentSort,
-            pinnedAgentKeys,
-            effectiveAgentPinnedOnly,
-            agentActivityTransitions,
-            agentActiveOnly,
-            combineWorkspaceGroupsForShortcut,
-          ),
-          agentGroup,
-          hostScope,
-          combineWorkspaceGroupsForShortcut,
-          collapsedSidebarGroupKeys,
-        );
+        const agentEntries = shortcutAgentEntries();
         if (agentEntries.length === 0) {
           return;
         }
@@ -3128,36 +3288,7 @@ export function App() {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
-      const combineWorkspaceGroupsForShortcut =
-        combineMatchingWorkspaceNames && hostScope === "all" && agentGroup === "workspace";
-      const tabEntries = filterCollapsedTabEntries(
-        buildVisibleTabEntries(
-          buildVisibleScopedWorkspaces(
-            bridgeViews,
-            selectedRuntime?.id ?? null,
-            hostScope,
-            scope,
-            activeSpace,
-            activeWorkspacesByBridgeId,
-            multiHostSpaceSelection,
-          ),
-          bridgeViews,
-          hostScope,
-          agentGroup,
-          pinnedAgentKeys,
-          sidebarView === "tabs" && effectiveAgentPinnedOnly,
-          sidebarView === "tabs" && agentFeaturesInTabs,
-          agentSort,
-          agentActivityTransitions,
-          sidebarView === "tabs" && agentFeaturesInTabs && agentActiveOnly,
-          combineWorkspaceGroupsForShortcut,
-        ),
-        agentGroup,
-        hostScope,
-        combineWorkspaceGroupsForShortcut,
-        collapsedSidebarGroupKeys,
-      );
-      const tabs = tabEntries;
+      const tabs = shortcutTabEntries();
       if (tabs.length === 0) {
         return;
       }
@@ -4133,6 +4264,11 @@ export function App() {
             }}
             refitToken={refitToken}
             focusToken={terminalFocusToken}
+            injectInput={
+              terminalInputInjection?.paneId === selectedPane?.pane_id
+                ? terminalInputInjection
+                : null
+            }
             touchInput={isTouchInput}
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
@@ -4181,6 +4317,11 @@ export function App() {
               selectedPane ? `Selected pane terminal: ${paneTitle(selectedPane)}` : "Terminal"
             }
             selected={Boolean(selectedPane)}
+            injectInput={
+              terminalInputInjection?.paneId === selectedPane?.pane_id
+                ? terminalInputInjection
+                : null
+            }
           />
         ) : (
           <div className="terminal-stage" aria-hidden="true" />
@@ -5749,6 +5890,40 @@ export function nextVisibleTabEntry(
   return entries[nextVisibleEntryIndex(entries.length, currentIndex, step)];
 }
 
+export function prefixModeInputFromKeyboardEvent(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey">,
+): PrefixModeInput {
+  const chordKey = /^[A-Z]$/u.test(event.key) ? event.key.toLowerCase() : event.key;
+  return {
+    chord: {
+      key: chordKey,
+      ctrl: event.ctrlKey,
+      shift: event.shiftKey,
+      alt: event.altKey,
+      meta: event.metaKey,
+    },
+    data: event.ctrlKey && event.key === "b" ? "\u0002" : event.key,
+  };
+}
+
+export function prefixTabAtIndex(
+  snapshot: Snapshot,
+  workspaceId: string,
+  index: number,
+) {
+  if (!Number.isInteger(index) || index < 1) {
+    return null;
+  }
+  return snapshot.tabs.filter((tab) => tab.workspace_id === workspaceId)[index - 1] ?? null;
+}
+
+export function prefixAgentPaneAtIndex(entries: ScopedAgentPane[], index: number) {
+  if (!Number.isInteger(index) || index < 1) {
+    return null;
+  }
+  return entries[index - 1] ?? null;
+}
+
 function nextVisibleEntryIndex(length: number, currentIndex: number, step: -1 | 1) {
   if (length === 0) {
     throw new Error("cannot navigate an empty visible entry list");
@@ -5874,6 +6049,7 @@ function SplitGrid({
   onSelectPane,
   refitToken,
   focusToken,
+  injectInput,
   touchInput,
   terminalFontSizePx,
   terminalScreenReaderText,
@@ -5898,6 +6074,7 @@ function SplitGrid({
   onSelectPane: (pane: PaneInfo) => void;
   refitToken: number;
   focusToken: number;
+  injectInput: { token: number; data: string } | null;
   touchInput: boolean;
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
@@ -5956,6 +6133,7 @@ function SplitGrid({
               focusToken={selected ? focusToken : 0}
               accessibilityLabel={accessibilityLabel}
               selected={selected}
+              injectInput={selected ? injectInput : null}
             />
           </div>
         );
