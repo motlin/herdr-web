@@ -55,6 +55,7 @@
 - Added a terminal palette setting that imports Ghostty theme color lines for exact ANSI color
   matching.
 - Added one-action terminal appearance import from the selected bridge's standard Ghostty config.
+- Added a bridge capability for importing supported keybindings from the host's Herdr config.
 
 ### Changed
 

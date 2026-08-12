@@ -64,8 +64,10 @@ const DEFAULT_STATIC_DIR: &str = "web/dist";
 const MIN_HERDR_VERSION: (u64, u64, u64) = (0, 8, 0);
 const MIN_HERDR_VERSION_LABEL: &str = "0.8.0";
 const MAX_GHOSTTY_CONFIG_BYTES: u64 = 64 * 1024;
+const MAX_HERDR_CONFIG_BYTES: u64 = 64 * 1024;
 const GHOSTTY_NO_APPEARANCE_SETTINGS_ERROR: &str =
     "Ghostty config contains no supported terminal appearance settings";
+const HERDR_NO_KEY_SETTINGS_ERROR: &str = "Herdr config contains no supported key settings";
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 const MAX_NOTES_REQUEST_BYTES: usize = 512 * 1024;
 const MAX_TERMINAL_INPUT_CHUNK_BYTES: usize = 768 * 1024;
@@ -156,6 +158,7 @@ struct Capabilities {
     agent_activity: AgentActivityCapability,
     agent_pins: AgentPinsCapability,
     ghostty_config: GhosttyConfigCapability,
+    herdr_keys: HerdrKeysCapability,
     launcher_presets: LauncherPresetsCapability,
     notes: NotesCapability,
 }
@@ -176,6 +179,11 @@ struct GhosttyConfigCapability {
 }
 
 #[derive(Debug, Serialize)]
+struct HerdrKeysCapability {
+    version: u32,
+}
+
+#[derive(Debug, Serialize)]
 struct LauncherPresetsCapability {
     version: u32,
 }
@@ -187,6 +195,12 @@ struct NotesCapability {
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 struct GhosttyConfigResponse {
+    version: u32,
+    source: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct HerdrKeysResponse {
     version: u32,
     source: String,
 }
@@ -1060,6 +1074,10 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
         .route(
             "/api/ghostty-config",
             get(ghostty_config_handler).options(preflight_handler),
+        )
+        .route(
+            "/api/herdr-keys",
+            get(herdr_keys_handler).options(preflight_handler),
         )
         .route(
             "/api/command",
@@ -2917,6 +2935,7 @@ async fn capabilities_handler(
         agent_activity: AgentActivityCapability { version: 1 },
         agent_pins: AgentPinsCapability { version: 1 },
         ghostty_config: GhosttyConfigCapability { version: 1 },
+        herdr_keys: HerdrKeysCapability { version: 1 },
         launcher_presets: LauncherPresetsCapability { version: 1 },
         notes: NotesCapability { version: 1 },
     }))
@@ -3008,6 +3027,103 @@ fn ghostty_terminal_appearance_key(key: &str) -> bool {
             | "selection-foreground"
             | "palette"
     )
+}
+
+async fn herdr_keys_handler(
+    State(state): State<BridgeState>,
+    headers: HeaderMap,
+) -> Result<Json<HerdrKeysResponse>, BridgeError> {
+    ensure_allowed_request(&headers, &state.request_policy)?;
+    let response = tokio::task::spawn_blocking(load_herdr_keys)
+        .await
+        .map_err(|err| BridgeError::Protocol(err.to_string()))??;
+    Ok(Json(response))
+}
+
+fn load_herdr_keys() -> Result<HerdrKeysResponse, BridgeError> {
+    let mut found_config = false;
+    for path in herdr_config_paths() {
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(err) if err.kind() == ErrorKind::NotFound => continue,
+            Err(err) => return Err(BridgeError::Io(err)),
+        };
+        found_config = true;
+        if metadata.len() > MAX_HERDR_CONFIG_BYTES {
+            return Err(BridgeError::BadRequest(
+                "Herdr config exceeds the 64 KiB import limit".to_string(),
+            ));
+        }
+        let source = std::fs::read_to_string(path)?;
+        let Some(source) = herdr_keys_source_if_present(&source) else {
+            continue;
+        };
+        return Ok(HerdrKeysResponse { version: 1, source });
+    }
+    if found_config {
+        return Err(BridgeError::BadRequest(
+            HERDR_NO_KEY_SETTINGS_ERROR.to_string(),
+        ));
+    }
+    Err(BridgeError::BadRequest(
+        "Herdr config was not found in a standard config directory".to_string(),
+    ))
+}
+
+fn herdr_config_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(config_home) = non_empty_env_path("XDG_CONFIG_HOME") {
+        paths.push(config_home.join("herdr").join("config.toml"));
+    }
+    if let Some(home) = non_empty_env_path("HOME") {
+        paths.push(home.join(".config").join("herdr").join("config.toml"));
+    }
+    paths.dedup();
+    paths
+}
+
+fn herdr_keys_source_if_present(source: &str) -> Option<String> {
+    let mut in_keys_section = false;
+    let mut key_lines = Vec::new();
+    for raw_line in source.lines() {
+        let line = raw_line.trim();
+        if line.starts_with('[') {
+            let section_header = line
+                .split_once('#')
+                .map_or(line, |(header, _)| header)
+                .trim();
+            in_keys_section = section_header == "[keys]";
+            continue;
+        }
+        if !in_keys_section {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if herdr_keys_key(key.trim()) && is_quoted_config_value(value.trim()) {
+            key_lines.push(line);
+        }
+    }
+    (!key_lines.is_empty()).then(|| key_lines.join("\n"))
+}
+
+fn herdr_keys_key(key: &str) -> bool {
+    matches!(
+        key,
+        "prefix"
+            | "new_tab"
+            | "next_tab"
+            | "previous_tab"
+            | "switch_tab"
+            | "close_tab"
+            | "close_pane"
+            | "focus_agent"
+    )
+}
+
+fn is_quoted_config_value(value: &str) -> bool {
+    value.len() >= 2 && value.starts_with('"') && value.ends_with('"')
 }
 
 async fn agent_activity_list_handler(
@@ -4626,6 +4742,39 @@ mod tests {
         assert_eq!(
             source,
             "font-family = Example Mono\nfont-size = 16\nbackground = #000000\nforeground = #cccccc\ncursor-color = #bbbbbb\nselection-background = #b5d5ff\nselection-foreground = #000000\npalette = 0=#000000"
+        );
+    }
+
+    #[test]
+    fn herdr_keys_import_exposes_only_allow_listed_key_scalars() {
+        let source = herdr_keys_source_if_present(
+            r#"
+                [keys]
+                prefix = "backtick"
+                new_tab = "prefix+c"
+                next_tab = "prefix+n"
+                previous_tab = "prefix+p"
+                switch_tab = "prefix+1..9"
+                close_tab = "prefix+shift+x"
+                close_pane = "prefix+x"
+                focus_agent = "prefix+alt+1..9"
+                detach = "prefix+q"
+
+                [ui]
+                theme = "dark"
+                prefix = "ui-secret"
+
+                [[keys.command]]
+                key = "prefix+g"
+                command = "example-command"
+                focus_agent = "nested-secret"
+            "#,
+        )
+        .expect("Herdr key settings should parse");
+
+        assert_eq!(
+            source,
+            "prefix = \"backtick\"\nnew_tab = \"prefix+c\"\nnext_tab = \"prefix+n\"\nprevious_tab = \"prefix+p\"\nswitch_tab = \"prefix+1..9\"\nclose_tab = \"prefix+shift+x\"\nclose_pane = \"prefix+x\"\nfocus_agent = \"prefix+alt+1..9\""
         );
     }
 
