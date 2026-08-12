@@ -35,6 +35,7 @@ import {
   shouldShowSidebarSort,
   shouldShowTabDivider,
   shouldShowLastStatusChangeSort,
+  sidebarContentSectionLabel,
   sidebarGroupCollapseKey,
   sortScopedAgentPanes,
   stableBridgeRefreshOffsetMs,
@@ -238,6 +239,13 @@ describe("App multi-bridge helpers", () => {
     expect(shouldShowSidebarSort("tabs", true)).toBe(true);
     expect(shouldShowSidebarSort("tabs", false)).toBe(false);
     expect(shouldShowSidebarSort("notes", true)).toBe(false);
+  });
+
+  it("labels the content section for the view that is rendered", () => {
+    expect(sidebarContentSectionLabel("agents", false)).toBe("Agents");
+    expect(sidebarContentSectionLabel("tabs", false)).toBe("Tabs");
+    expect(sidebarContentSectionLabel("notes", true)).toBe("Notes");
+    expect(sidebarContentSectionLabel("notes", false)).toBe("Tabs");
   });
 
   it("sorts scoped agents by bridge display order, workspace, tab, then scoped pane id", () => {

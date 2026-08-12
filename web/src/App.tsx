@@ -7456,13 +7456,7 @@ function Switcher({
             <section
               className="sec"
               data-sidebar-section="content"
-              aria-label={
-                sidebarView === "agents"
-                  ? "Agents"
-                  : sidebarView === "tabs"
-                    ? "Tabs"
-                    : "Notes"
-              }
+              aria-label={sidebarContentSectionLabel(sidebarView, notesViewActive)}
               tabIndex={0}
             >
               <div className="sec-head">
@@ -9280,6 +9274,16 @@ export function shouldShowSidebarSort(
   agentFeaturesInTabs: boolean,
 ) {
   return sidebarView === "agents" || (sidebarView === "tabs" && agentFeaturesInTabs);
+}
+
+export function sidebarContentSectionLabel(
+  sidebarView: SidebarView,
+  notesViewActive: boolean,
+) {
+  if (sidebarView === "agents") {
+    return "Agents";
+  }
+  return notesViewActive ? "Notes" : "Tabs";
 }
 
 export function shouldOfferSpaceHostGrouping(hostScope: HostScope, hostCount: number) {

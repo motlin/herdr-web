@@ -41,6 +41,19 @@ describe("terminal theme preferences", () => {
     });
   });
 
+  it("skips unsupported named and Ghostty RGB colors", () => {
+    expect(
+      terminalThemeFromGhosttySource(`
+        background = #010203
+        foreground = white
+        cursor-color = rgb:aa/bb/cc
+      `),
+    ).toStrictEqual({
+      ...DEFAULT_TERMINAL_THEME,
+      background: "#010203",
+    });
+  });
+
   it("falls back when stored theme text has no supported valid colors", () => {
     expect(parseTerminalThemeSource(null)).toBe(DEFAULT_TERMINAL_THEME_SOURCE);
     expect(parseTerminalThemeSource("theme = Example")).toBe(DEFAULT_TERMINAL_THEME_SOURCE);

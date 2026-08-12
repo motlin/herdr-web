@@ -93,6 +93,7 @@
 - Fixed partial Ghostty theme imports falling back to unreadable built-in colors instead of the
   app's default palette.
 - Fixed Escape in terminal appearance text fields closing the entire settings dialog.
+- Fixed the sidebar content section announcing Notes when disabled Notes content falls back to Tabs.
 
 ## [0.4.1] - 2026-08-05
 
