@@ -83,6 +83,11 @@ type Props = {
   onTerminalThemeSource: (value: string) => void;
   ghosttyConfigImportAvailable: boolean;
   onImportGhosttyConfig: () => Promise<void>;
+  prefixModeEnabled: boolean;
+  onPrefixModeEnabled: (enabled: boolean) => void;
+  herdrKeysImportAvailable: boolean;
+  herdrKeysPrefixLabel: string;
+  onImportHerdrKeys: () => Promise<void>;
   terminalInputTransport: TerminalInputTransport;
   onTerminalInputTransport: (transport: TerminalInputTransport) => void;
   terminalInputBatchDelayMs: number;
@@ -145,6 +150,11 @@ export function BackendSettingsDialog({
   onTerminalThemeSource,
   ghosttyConfigImportAvailable,
   onImportGhosttyConfig,
+  prefixModeEnabled,
+  onPrefixModeEnabled,
+  herdrKeysImportAvailable,
+  herdrKeysPrefixLabel,
+  onImportHerdrKeys,
   terminalInputTransport,
   onTerminalInputTransport,
   terminalInputBatchDelayMs,
@@ -186,6 +196,8 @@ export function BackendSettingsDialog({
   const [terminalConfigImportMessage, setTerminalConfigImportMessage] = useState<string | null>(
     null,
   );
+  const [herdrKeysImportBusy, setHerdrKeysImportBusy] = useState(false);
+  const [herdrKeysImportMessage, setHerdrKeysImportMessage] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<BridgeBackendProfile | null>(null);
   const [activeArea, setActiveArea] = useState<SettingsArea>("bridge");
 
@@ -206,6 +218,21 @@ export function BackendSettingsDialog({
       );
     } finally {
       setTerminalConfigImportBusy(false);
+    }
+  };
+
+  const importHerdrKeys = async () => {
+    setHerdrKeysImportBusy(true);
+    setHerdrKeysImportMessage(null);
+    try {
+      await onImportHerdrKeys();
+      setHerdrKeysImportMessage("Imported keybindings from Herdr.");
+    } catch (importError) {
+      setHerdrKeysImportMessage(
+        importError instanceof Error ? importError.message : "Herdr keybindings import failed",
+      );
+    } finally {
+      setHerdrKeysImportBusy(false);
     }
   };
   const sameOriginEnabled = bridge.store.enabledBridgeIds.includes(SAME_ORIGIN_BRIDGE_ID);
@@ -718,6 +745,56 @@ export function BackendSettingsDialog({
 
             {activeArea === "terminal" ? (
               <div className="settings-section settings-section-flat">
+                <div className="settings-label">Terminal keybindings</div>
+                <div className="settings-row">
+                  <span>Herdr keybindings</span>
+                  <div
+                    className="segmented-control"
+                    role="group"
+                    aria-label="Herdr keybindings"
+                  >
+                    <button
+                      type="button"
+                      data-on={!prefixModeEnabled}
+                      aria-pressed={!prefixModeEnabled}
+                      onClick={() => onPrefixModeEnabled(false)}
+                    >
+                      Off
+                    </button>
+                    <button
+                      type="button"
+                      data-on={prefixModeEnabled}
+                      aria-pressed={prefixModeEnabled}
+                      onClick={() => onPrefixModeEnabled(true)}
+                    >
+                      On
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <span aria-label="Detected Herdr prefix">
+                    Detected prefix: {herdrKeysPrefixLabel}
+                  </span>
+                  <button
+                    className="btn"
+                    type="button"
+                    aria-label="Import Herdr keybindings from bridge"
+                    disabled={!herdrKeysImportAvailable || herdrKeysImportBusy}
+                    onClick={() => void importHerdrKeys()}
+                  >
+                    {herdrKeysImportBusy ? "Importing…" : "Import from bridge"}
+                  </button>
+                </div>
+                {herdrKeysImportMessage ? (
+                  <div className="settings-hint" role="status">
+                    {herdrKeysImportMessage}
+                  </div>
+                ) : null}
+                {!herdrKeysImportAvailable ? (
+                  <div className="settings-hint">
+                    The selected bridge does not support Herdr keybindings import.
+                  </div>
+                ) : null}
                 <div className="settings-label">Terminal appearance</div>
                 <div className="settings-row">
                   <span>Ghostty config</span>

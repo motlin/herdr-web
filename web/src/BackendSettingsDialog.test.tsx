@@ -79,6 +79,61 @@ describe("BackendSettingsDialog", () => {
     });
   });
 
+  it("shows the detected Herdr prefix and imports keybindings from a supported bridge", async () => {
+    const onImportHerdrKeys = vi.fn().mockResolvedValue(undefined);
+    const { container } = await renderDialog({
+      herdrKeysImportAvailable: true,
+      herdrKeysPrefixLabel: "`",
+      onImportHerdrKeys,
+    });
+    await openTerminalSettings(container);
+
+    expect(
+      requiredElement<HTMLElement>(container, '[aria-label="Detected Herdr prefix"]')
+        .textContent,
+    ).toBe("Detected prefix: `");
+    const importButton = requiredElement<HTMLButtonElement>(
+      container,
+      'button[aria-label="Import Herdr keybindings from bridge"]',
+    );
+    await act(async () => {
+      importButton.click();
+    });
+
+    expect(onImportHerdrKeys.mock.calls).toStrictEqual([[]]);
+  });
+
+  it("toggles Herdr keybindings and explains when bridge import is unavailable", async () => {
+    const onPrefixModeEnabled = vi.fn();
+    const { container } = await renderDialog({ onPrefixModeEnabled });
+    await openTerminalSettings(container);
+
+    const toggle = requiredElement<HTMLElement>(
+      container,
+      '[role="group"][aria-label="Herdr keybindings"]',
+    );
+    const offButton = Array.from(toggle.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Off",
+    );
+    if (!offButton) {
+      throw new Error("missing Herdr keybindings Off button");
+    }
+    await act(async () => {
+      offButton.click();
+    });
+
+    expect({
+      toggleCalls: onPrefixModeEnabled.mock.calls,
+      importDisabled: requiredElement<HTMLButtonElement>(
+        container,
+        'button[aria-label="Import Herdr keybindings from bridge"]',
+      ).disabled,
+      hintPresent: container.textContent?.includes(
+        "The selected bridge does not support Herdr keybindings import.",
+      ),
+    }).toStrictEqual({ toggleCalls: [[false]], importDisabled: true, hintPresent: true });
+  });
+
   it("keeps settings open when Escape discards a font family draft", async () => {
     const { container, onClose } = await renderDialog();
     await openTerminalSettings(container);
@@ -129,17 +184,23 @@ function ScreenReaderSettingsHarness({ onChange }: { onChange: (enabled: boolean
   );
 }
 
-async function renderDialog() {
+async function renderDialog(
+  overrides: Partial<ComponentProps<typeof BackendSettingsDialog>> = {},
+) {
   const onClose = vi.fn();
   const callback = vi.fn();
   const { container } = await render(
-    <BackendSettingsDialog {...settingsProps(onClose, callback)} />,
+    <BackendSettingsDialog {...settingsProps(onClose, callback, overrides)} />,
   );
 
   return { container, onClose };
 }
 
-function settingsProps(onClose: () => void, callback: () => void) {
+function settingsProps(
+  onClose: () => void,
+  callback: () => void,
+  overrides: Partial<ComponentProps<typeof BackendSettingsDialog>> = {},
+) {
   return {
     showMobileTerminalSettings: false,
     notesEnabled: true,
@@ -162,6 +223,11 @@ function settingsProps(onClose: () => void, callback: () => void) {
     onTerminalThemeSource: callback,
     ghosttyConfigImportAvailable: false,
     onImportGhosttyConfig: vi.fn(),
+    prefixModeEnabled: true,
+    onPrefixModeEnabled: callback,
+    herdrKeysImportAvailable: false,
+    herdrKeysPrefixLabel: "Ctrl+B",
+    onImportHerdrKeys: vi.fn(),
     terminalInputTransport: "json",
     onTerminalInputTransport: callback,
     terminalInputBatchDelayMs: 0,
@@ -188,6 +254,7 @@ function settingsProps(onClose: () => void, callback: () => void) {
     mobileKeyboardHideRefit: true,
     onMobileKeyboardHideRefit: callback,
     onClose,
+    ...overrides,
   } satisfies ComponentProps<typeof BackendSettingsDialog>;
 }
 

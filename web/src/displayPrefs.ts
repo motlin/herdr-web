@@ -3,6 +3,7 @@ export const DEFAULT_CONTENT_INSET_BOTTOM_PX = 0;
 export const DEFAULT_MOBILE_CONTROLS_SCALE_PERCENT = 100;
 export const DEFAULT_AGENT_FEATURES_IN_TABS = true;
 export const DEFAULT_MULTI_HOST_SPACE_SELECTION = true;
+export const DEFAULT_PREFIX_MODE_ENABLED = true;
 
 export const MIN_CONTENT_INSET_TOP_PX = 0;
 export const MAX_CONTENT_INSET_TOP_PX = 96;
@@ -41,6 +42,13 @@ export function parseMobileControlsScalePercent(value: unknown) {
 export function parseAgentFeaturesInTabs(
   value: unknown,
   fallback = DEFAULT_AGENT_FEATURES_IN_TABS,
+) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+export function parsePrefixModeEnabled(
+  value: unknown,
+  fallback = DEFAULT_PREFIX_MODE_ENABLED,
 ) {
   return typeof value === "boolean" ? value : fallback;
 }

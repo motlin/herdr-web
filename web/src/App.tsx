@@ -77,11 +77,13 @@ import {
   DEFAULT_MOBILE_CONTROLS_SCALE_PERCENT,
   DEFAULT_AGENT_FEATURES_IN_TABS,
   DEFAULT_MULTI_HOST_SPACE_SELECTION,
+  DEFAULT_PREFIX_MODE_ENABLED,
   parseContentInsetBottomPx,
   parseContentInsetTopPx,
   parseMobileControlsScalePercent,
   parseAgentFeaturesInTabs,
   parseMultiHostSpaceSelection,
+  parsePrefixModeEnabled,
 } from "./displayPrefs";
 import { LaunchDialog } from "./LaunchDialog";
 import { resolveLaunchSpec } from "./launch";
@@ -89,8 +91,12 @@ import type { LaunchTarget } from "./launch";
 import { fetchLauncherPresets, supportsLauncherPresets } from "./launcherPresets";
 import type { LauncherPresetsResponse } from "./launcherPresets";
 import { fetchWithTimeout } from "./fetchWithTimeout";
-import { parseHerdrKeysSource } from "./herdrKeys";
-import type { HerdrKeyAction } from "./herdrKeys";
+import {
+  fetchHerdrKeys,
+  parseHerdrKeysSource,
+  supportsHerdrKeysImport,
+} from "./herdrKeys";
+import type { HerdrKeyAction, KeyChord } from "./herdrKeys";
 import {
   DEFAULT_MOBILE_COMMAND_ENTER_NEWLINE,
   DEFAULT_MOBILE_COMMAND_EXPANDING_INPUT,
@@ -426,6 +432,7 @@ type DisplayPrefs = {
   agentActiveOnly: boolean;
   agentFeaturesInTabs: boolean;
   multiHostSpaceSelection: boolean;
+  prefixModeEnabled: boolean;
   sidebarWidth: number;
   notesPanelWidth: number;
   notesListPaneWidth: number;
@@ -493,6 +500,7 @@ function readDisplayPrefs(): DisplayPrefs {
     agentActiveOnly: false,
     agentFeaturesInTabs: DEFAULT_AGENT_FEATURES_IN_TABS,
     multiHostSpaceSelection: DEFAULT_MULTI_HOST_SPACE_SELECTION,
+    prefixModeEnabled: DEFAULT_PREFIX_MODE_ENABLED,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     notesPanelWidth: DEFAULT_NOTES_PANEL_WIDTH,
     notesListPaneWidth: DEFAULT_NOTES_LIST_PANE_WIDTH,
@@ -682,6 +690,10 @@ function parseDisplayPrefsValue(
     multiHostSpaceSelection: parseMultiHostSpaceSelection(
       parsed.multiHostSpaceSelection,
       fallback.multiHostSpaceSelection,
+    ),
+    prefixModeEnabled: parsePrefixModeEnabled(
+      parsed.prefixModeEnabled,
+      fallback.prefixModeEnabled,
     ),
     sidebarWidth,
     notesPanelWidth,
@@ -1036,6 +1048,7 @@ export function App() {
   const [multiHostSpaceSelection, setMultiHostSpaceSelection] = useState(
     initialPrefs.multiHostSpaceSelection,
   );
+  const [prefixModeEnabled, setPrefixModeEnabled] = useState(initialPrefs.prefixModeEnabled);
   const [sidebarWidth, setSidebarWidth] = useState(initialPrefs.sidebarWidth);
   const [notesPanelWidth, setNotesPanelWidth] = useState(initialPrefs.notesPanelWidth);
   const [notesListPaneWidth, setNotesListPaneWidth] = useState(initialPrefs.notesListPaneWidth);
@@ -1135,6 +1148,7 @@ export function App() {
   const [terminalFocusToken, setTerminalFocusToken] = useState(0);
   const [terminalInputInjection, setTerminalInputInjection] =
     useState<TerminalInputInjection | null>(null);
+  const [herdrKeys, setHerdrKeys] = useState(DEFAULT_HERDR_KEYS);
   const prefixModeStateRef = useRef<PrefixModeState>("idle");
   const isCompactLayout = useIsCompactLayout();
   const isTouchInput = useIsTouchInput();
@@ -1148,6 +1162,12 @@ export function App() {
   const mobileDetailHistoryRef = useRef(false);
   const legacySelectionAppliedRef = useRef(false);
   const selectedNotePaneKeyRef = useRef("");
+
+  useEffect(() => {
+    if (!prefixModeEnabled) {
+      prefixModeStateRef.current = "idle";
+    }
+  }, [prefixModeEnabled]);
   const notesListResizeLeftRef = useRef(0);
   const sidebarResizePressRef = useRef<{
     timer: number;
@@ -1209,6 +1229,7 @@ export function App() {
       setAgentActiveOnly(prefs.agentActiveOnly);
       setAgentFeaturesInTabs(prefs.agentFeaturesInTabs);
       setMultiHostSpaceSelection(prefs.multiHostSpaceSelection);
+      setPrefixModeEnabled(prefs.prefixModeEnabled);
       setSidebarWidth(prefs.sidebarWidth);
       setNotesPanelWidth(prefs.notesPanelWidth);
       setNotesListPaneWidth(prefs.notesListPaneWidth);
@@ -1418,6 +1439,15 @@ export function App() {
     applyGhosttyAppearanceSource(response.source);
     setError(null);
   }, [applyGhosttyAppearanceSource, selectedRuntime]);
+  const importHerdrKeys = useCallback(async () => {
+    if (!selectedRuntime) {
+      throw new Error("Select a connected bridge before importing Herdr keybindings");
+    }
+    const response = await fetchHerdrKeys(selectedRuntime.httpUrl);
+    setHerdrKeys(parseHerdrKeysSource(response.source));
+    prefixModeStateRef.current = "idle";
+    setError(null);
+  }, [selectedRuntime]);
   const selectedWsUrl = useMemo(
     () => selectedRuntime?.wsUrl ?? disconnectedWsUrl,
     [selectedRuntime?.connectionKey],
@@ -1795,6 +1825,7 @@ export function App() {
       agentActiveOnly,
       agentFeaturesInTabs,
       multiHostSpaceSelection,
+      prefixModeEnabled,
       sidebarWidth,
       notesPanelWidth,
       notesListPaneWidth,
@@ -1833,6 +1864,7 @@ export function App() {
     agentActiveOnly,
     agentFeaturesInTabs,
     multiHostSpaceSelection,
+    prefixModeEnabled,
     sidebarWidth,
     notesPanelWidth,
     notesListPaneWidth,
@@ -3103,27 +3135,29 @@ export function App() {
         return;
       }
 
-      const prefixTransition = transitionPrefixMode(
-        prefixModeStateRef.current,
-        prefixModeInputFromKeyboardEvent(event),
-        DEFAULT_HERDR_KEYS.prefix,
-        DEFAULT_HERDR_KEYS.bindings,
-      );
-      prefixModeStateRef.current = prefixTransition.state;
-      if (prefixTransition.swallow) {
-        event.preventDefault();
-        event.stopPropagation();
-        const emission = prefixTransition.emission;
-        if (emission?.type === "literal" && selectedPane) {
-          setTerminalInputInjection((current) => ({
-            paneId: selectedPane.pane_id,
-            token: (current?.token ?? 0) + 1,
-            data: emission.data,
-          }));
-        } else if (emission?.type === "action") {
-          dispatchPrefixAction(emission.action, emission.index);
+      if (prefixModeEnabled) {
+        const prefixTransition = transitionPrefixMode(
+          prefixModeStateRef.current,
+          prefixModeInputFromKeyboardEvent(event),
+          herdrKeys.prefix,
+          herdrKeys.bindings,
+        );
+        prefixModeStateRef.current = prefixTransition.state;
+        if (prefixTransition.swallow) {
+          event.preventDefault();
+          event.stopPropagation();
+          const emission = prefixTransition.emission;
+          if (emission?.type === "literal" && selectedPane) {
+            setTerminalInputInjection((current) => ({
+              paneId: selectedPane.pane_id,
+              token: (current?.token ?? 0) + 1,
+              data: emission.data,
+            }));
+          } else if (emission?.type === "action") {
+            dispatchPrefixAction(emission.action, emission.index);
+          }
+          return;
         }
-        return;
       }
 
       const navigationShortcut = isAppNavigationShortcut(event);
@@ -3328,6 +3362,7 @@ export function App() {
     bridgeViews,
     busy,
     dialog,
+    herdrKeys,
     hostScope,
     isCompactLayout,
     launchTarget,
@@ -3336,6 +3371,7 @@ export function App() {
     navigationIsShared,
     paneFocusSupported,
     pinnedAgentKeys,
+    prefixModeEnabled,
     scope,
     sidebarView,
     selectedPane,
@@ -4553,6 +4589,13 @@ export function App() {
             selectedRuntime?.capabilities,
           )}
           onImportGhosttyConfig={importGhosttyConfig}
+          prefixModeEnabled={prefixModeEnabled}
+          onPrefixModeEnabled={setPrefixModeEnabled}
+          herdrKeysImportAvailable={supportsHerdrKeysImport(
+            selectedRuntime?.capabilities,
+          )}
+          herdrKeysPrefixLabel={formatHerdrKeyChord(herdrKeys.prefix)}
+          onImportHerdrKeys={importHerdrKeys}
           terminalInputTransport={terminalInputTransport}
           onTerminalInputTransport={setTerminalInputTransport}
           terminalInputBatchDelayMs={terminalInputBatchDelayMs}
@@ -5888,6 +5931,24 @@ export function nextVisibleTabEntry(
   step: -1 | 1,
 ): ScopedTabEntry {
   return entries[nextVisibleEntryIndex(entries.length, currentIndex, step)];
+}
+
+function formatHerdrKeyChord(chord: KeyChord) {
+  const parts: string[] = [];
+  if (chord.ctrl) {
+    parts.push("Ctrl");
+  }
+  if (chord.shift) {
+    parts.push("Shift");
+  }
+  if (chord.alt) {
+    parts.push("Alt");
+  }
+  if (chord.meta) {
+    parts.push("Meta");
+  }
+  parts.push(chord.key.length === 1 ? chord.key.toUpperCase() : chord.key);
+  return parts.join("+");
 }
 
 export function prefixModeInputFromKeyboardEvent(
