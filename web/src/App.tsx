@@ -152,6 +152,13 @@ import {
 import { transitionPrefixMode } from "./prefixMode";
 import type { PrefixModeInput, PrefixModeState } from "./prefixMode";
 import { createSnapshotRefreshController } from "./refreshCoordinator";
+import { SidebarTokenRows } from "./SidebarRow";
+import {
+  DEFAULT_SIDEBAR_CONFIG,
+  resolveSpaceRows,
+  spaceTokenContext,
+} from "./sidebarTokens";
+import type { ResolvedRow } from "./sidebarTokens";
 import { TerminalView } from "./TerminalView";
 import {
   DEFAULT_TERMINAL_SCREEN_READER_TEXT,
@@ -7367,6 +7374,17 @@ function Switcher({
   ) => {
     const workspaceId = entry.workspace.workspace_id;
     const bridgeId = entry.view.runtime.id;
+    const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+    const agentCount = entry.workspacePanes.filter(isAgentPane).length;
+    const rows = resolveSpaceRows(
+      sidebarConfig.spaces,
+      spaceTokenContext(entry.workspace),
+    );
+    const subtitle = spaceSubtitle(
+      entry.workspace,
+      showBridgeLabel ? entry.view.runtime.label : undefined,
+      agentCount,
+    );
     const reorderMember =
       spaceReorderMode?.bridgeId === bridgeId && reorderBlockIdSet.has(workspaceId);
     const reorderSource = reorderMember && workspaceId === spaceReorderMode?.workspaceId;
@@ -7381,8 +7399,8 @@ function Switcher({
       key={`${entry.view.runtime.id}:${entry.workspace.workspace_id}`}
       index={index}
       workspace={entry.workspace}
-      bridgeLabel={showBridgeLabel ? entry.view.runtime.label : undefined}
-      agentCount={entry.workspacePanes.filter(isAgentPane).length}
+      rows={rows}
+      subtitle={subtitle}
       active={entry.active}
       attention={countAttention(entry.workspacePanes)}
       reorderMember={reorderMember}
@@ -9051,10 +9069,10 @@ function GroupHeader({
   );
 }
 
-function SpaceRow({
+export function SpaceRow({
   workspace,
-  bridgeLabel,
-  agentCount,
+  rows,
+  subtitle,
   active,
   attention,
   index,
@@ -9075,8 +9093,8 @@ function SpaceRow({
   onCancelReorder,
 }: {
   workspace: WorkspaceInfo;
-  bridgeLabel?: string;
-  agentCount: number;
+  rows: ResolvedRow[];
+  subtitle: string;
   active: boolean;
   attention: number;
   index: number;
@@ -9115,6 +9133,7 @@ function SpaceRow({
         disabled={reorderSource && reorderBusy}
         aria-label={reorderSource ? `Move ${workspace.label}` : undefined}
         aria-describedby={reorderSource ? SPACE_REORDER_INSTRUCTIONS_ID : undefined}
+        title={subtitle}
         style={{ animationDelay: `${Math.min(index, 14) * 22}ms` }}
         {...(reorderSource
           ? {
@@ -9126,13 +9145,11 @@ function SpaceRow({
             }
           : press)}
       >
-        <span className="dot" data-status={workspace.agent_status} />
-        <span className="space-body">
-          <span className="space-name">{workspace.label}</span>
-          <span className="space-sub mono">
-            {spaceSubtitle(workspace, bridgeLabel, agentCount)}
-          </span>
-        </span>
+        <SidebarTokenRows
+          rows={rows}
+          status={workspace.agent_status}
+          variant="space"
+        />
         {attention > 0 ? <span className="attn">{attention}</span> : null}
       </button>
       {reorderSource ? (
