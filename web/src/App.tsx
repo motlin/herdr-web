@@ -154,6 +154,11 @@ import type { PrefixModeInput, PrefixModeState } from "./prefixMode";
 import { createSnapshotRefreshController } from "./refreshCoordinator";
 import { SidebarTokenRows } from "./SidebarRow";
 import {
+  fetchSidebarConfig,
+  supportsSidebarConfig,
+} from "./sidebarConfig";
+import type { SidebarConfigResponse } from "./sidebarConfig";
+import {
   DEFAULT_SIDEBAR_CONFIG,
   agentTokenContext,
   resolveAgentRows,
@@ -162,7 +167,7 @@ import {
   shouldShowTabToken,
   spaceTokenContext,
 } from "./sidebarTokens";
-import type { ResolvedRow } from "./sidebarTokens";
+import type { ResolvedRow, SidebarConfig } from "./sidebarTokens";
 import { TerminalView } from "./TerminalView";
 import {
   DEFAULT_TERMINAL_SCREEN_READER_TEXT,
@@ -292,6 +297,7 @@ type BridgeResourceState<Response> = {
 };
 type BridgeNotesState = BridgeResourceState<NotesListResponse>;
 type BridgeLauncherPresetsState = BridgeResourceState<LauncherPresetsResponse>;
+type BridgeSidebarConfigState = BridgeResourceState<SidebarConfigResponse>;
 type PendingCreatedPaneNoteTarget = {
   note: PaneNote;
   pane: PaneInfo;
@@ -989,6 +995,9 @@ export function App() {
   const [agentActivityStates, setAgentActivityStates] =
     useState<Record<string, BridgeAgentActivityState>>({});
   const [agentPinsStates, setAgentPinsStates] = useState<Record<string, BridgeAgentPinsState>>({});
+  const [sidebarConfigStates, setSidebarConfigStates] = useState<
+    Record<string, BridgeSidebarConfigState>
+  >({});
   const [notesStates, setNotesStates] = useState<Record<string, BridgeNotesState>>({});
   const [launcherPresetStates, setLauncherPresetStates] = useState<
     Record<string, BridgeLauncherPresetsState>
@@ -1360,6 +1369,16 @@ export function App() {
       }),
     [bridge.enabledRuntimes, connectionStates],
   );
+  const sidebarConfigs = useMemo<Record<BridgeId, SidebarConfig>>(() => {
+    const configs: Record<BridgeId, SidebarConfig> = {};
+    for (const view of bridgeViews) {
+      const state = sidebarConfigStates[view.runtime.id];
+      if (state?.connectionKey === view.runtime.connectionKey && state.response) {
+        configs[view.runtime.id] = state.response.config;
+      }
+    }
+    return configs;
+  }, [bridgeViews, sidebarConfigStates]);
   const pinnedAgentKeys = useMemo(
     () => buildAgentPinKeySet(bridgeViews, agentPinsStates),
     [agentPinsStates, bridgeViews],
@@ -2142,6 +2161,18 @@ export function App() {
     setAgentPinsStates((current) => {
       let changed = false;
       const next: Record<string, BridgeAgentPinsState> = {};
+      for (const [bridgeId, state] of Object.entries(current)) {
+        if (activeBridgeIds.has(bridgeId)) {
+          next[bridgeId] = state;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+    setSidebarConfigStates((current) => {
+      let changed = false;
+      const next: Record<string, BridgeSidebarConfigState> = {};
       for (const [bridgeId, state] of Object.entries(current)) {
         if (activeBridgeIds.has(bridgeId)) {
           next[bridgeId] = state;
@@ -3603,6 +3634,25 @@ export function App() {
     }
   }, [bridge.enabledRuntimes]);
 
+  async function refreshBridgeSidebarConfig(runtime: BridgeRuntime, setLoading: boolean) {
+    return refreshBridgeResource({
+      runtime,
+      setLoading,
+      supported: supportsSidebarConfig(runtime.capabilities),
+      setState: setSidebarConfigStates,
+      fetchResponse: () => fetchSidebarConfig(runtime.httpUrl),
+      fallbackError: "Sidebar config unavailable",
+    });
+  }
+
+  useEffect(() => {
+    for (const runtime of bridge.enabledRuntimes) {
+      if (runtime.capabilityState === "ready" && supportsSidebarConfig(runtime.capabilities)) {
+        void refreshBridgeSidebarConfig(runtime, true);
+      }
+    }
+  }, [bridge.enabledRuntimes]);
+
   async function refreshBridgeNotes(runtime: BridgeRuntime, setLoading: boolean) {
     return refreshBridgeResource({
       runtime,
@@ -4028,6 +4078,7 @@ export function App() {
       >
         <Switcher
           bridgeViews={bridgeViews}
+          sidebarConfigs={sidebarConfigs}
           selectedBridgeId={selectedRuntime?.id ?? null}
           hostScope={hostScope}
           snapshot={snapshot}
@@ -6300,6 +6351,7 @@ function TabBar({
 
 function Switcher({
   bridgeViews,
+  sidebarConfigs,
   selectedBridgeId,
   hostScope,
   snapshot,
@@ -6358,6 +6410,7 @@ function Switcher({
   onScopedMenu,
 }: {
   bridgeViews: BridgeConnectionView[];
+  sidebarConfigs: Record<BridgeId, SidebarConfig>;
   selectedBridgeId: BridgeId | null;
   hostScope: HostScope;
   snapshot: Snapshot | null;
@@ -6964,7 +7017,8 @@ function Switcher({
                 renderAsAgent ? "agent" : "pane",
               );
             if (renderAsAgent) {
-              const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+              const sidebarConfig =
+                sidebarConfigs[group.bridgeId] ?? DEFAULT_SIDEBAR_CONFIG;
               const rows = resolveAgentRows(
                 sidebarConfig.agents,
                 agentTokenContext(pane, {
@@ -7270,7 +7324,8 @@ function Switcher({
     );
     const tab = entry.snapshot.tabs.find((item) => item.tab_id === entry.pane.tab_id);
     const tabHasCustomName = tab ? canClearTabName(tab) : false;
-    const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+    const sidebarConfig =
+      sidebarConfigs[entry.bridgeId] ?? DEFAULT_SIDEBAR_CONFIG;
     const rows = resolveAgentRows(
       sidebarConfig.agents,
       agentTokenContext(entry.pane, {
@@ -7415,7 +7470,7 @@ function Switcher({
   ) => {
     const workspaceId = entry.workspace.workspace_id;
     const bridgeId = entry.view.runtime.id;
-    const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+    const sidebarConfig = sidebarConfigs[bridgeId] ?? DEFAULT_SIDEBAR_CONFIG;
     const agentCount = entry.workspacePanes.filter(isAgentPane).length;
     const rows = resolveSpaceRows(
       sidebarConfig.spaces,
