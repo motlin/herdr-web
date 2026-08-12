@@ -3239,7 +3239,7 @@ export function App() {
           event.preventDefault();
           event.stopPropagation();
           const emission = prefixTransition.emission;
-          if (emission?.type === "literal" && selectedPane) {
+          if (emission?.type === "literal" && emission.data && selectedPane) {
             injectTerminalInput(selectedPane.pane_id, emission.data);
           } else if (emission?.type === "action") {
             dispatchPrefixAction(emission.action, emission.index);
@@ -6072,6 +6072,34 @@ function formatHerdrKeyChord(chord: KeyChord) {
   return parts.join("+");
 }
 
+const NAMED_KEY_TERMINAL_DATA: ReadonlyMap<string, string> = new Map([
+  ["Escape", "\u001b"],
+  ["Tab", "\t"],
+  ["Enter", "\r"],
+  ["Backspace", "\u007f"],
+]);
+
+// Ctrl+Space plus Ctrl+@ through Ctrl+_ are the C0 control bytes a terminal receives;
+// every other key sends itself when it is a printable character, and nothing otherwise.
+function terminalDataFromKeyboardEvent(
+  event: Pick<KeyboardEvent, "key" | "ctrlKey">,
+): string {
+  if ([...event.key].length !== 1) {
+    return NAMED_KEY_TERMINAL_DATA.get(event.key) ?? "";
+  }
+  const codePoint = event.key.codePointAt(0) ?? 0;
+  if (event.ctrlKey) {
+    const upper = codePoint >= 0x61 && codePoint <= 0x7a ? codePoint - 0x20 : codePoint;
+    if (upper === 0x20) {
+      return "\u0000";
+    }
+    if (upper >= 0x40 && upper <= 0x5f) {
+      return String.fromCodePoint(upper & 0x1f);
+    }
+  }
+  return codePoint >= 0x20 && codePoint !== 0x7f ? event.key : "";
+}
+
 export function prefixModeInputFromKeyboardEvent(
   event: Pick<
     KeyboardEvent,
@@ -6088,7 +6116,7 @@ export function prefixModeInputFromKeyboardEvent(
       meta: event.metaKey,
     },
     code: event.code,
-    data: event.ctrlKey && event.key === "b" ? "\u0002" : event.key,
+    data: terminalDataFromKeyboardEvent(event),
   };
 }
 

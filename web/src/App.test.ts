@@ -1621,6 +1621,103 @@ describe("App multi-bridge helpers", () => {
     });
   });
 
+  it("sends the real terminal byte when a non-default prefix is pressed twice", () => {
+    const controlA = parseHerdrKeysSource('prefix = "ctrl+a"\n');
+    const escape = parseHerdrKeysSource('prefix = "esc"\n');
+    const tab = parseHerdrKeysSource('prefix = "tab"\n');
+
+    expect({
+      controlA: transitionPrefixMode(
+        "pending",
+        prefixModeInputFromKeyboardEvent({
+          key: "a",
+          code: "KeyA",
+          ctrlKey: true,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+        }),
+        controlA.prefix,
+        controlA.bindings,
+      ),
+      escape: transitionPrefixMode(
+        "pending",
+        prefixModeInputFromKeyboardEvent({
+          key: "Escape",
+          code: "Escape",
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+        }),
+        escape.prefix,
+        escape.bindings,
+      ),
+      tab: transitionPrefixMode(
+        "pending",
+        prefixModeInputFromKeyboardEvent({
+          key: "Tab",
+          code: "Tab",
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+        }),
+        tab.prefix,
+        tab.bindings,
+      ),
+    }).toStrictEqual({
+      controlA: {
+        state: "idle",
+        swallow: true,
+        emission: { type: "literal", data: "\u0001" },
+      },
+      escape: {
+        state: "idle",
+        swallow: true,
+        emission: { type: "literal", data: "\u001b" },
+      },
+      tab: {
+        state: "idle",
+        swallow: true,
+        emission: { type: "literal", data: "\t" },
+      },
+    });
+  });
+
+  it("leaves prefix input data empty for keys with no terminal representation", () => {
+    expect({
+      arrow: prefixModeInputFromKeyboardEvent({
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+      }).data,
+      controlMinus: prefixModeInputFromKeyboardEvent({
+        key: "-",
+        code: "Minus",
+        ctrlKey: true,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+      }).data,
+      controlSpace: prefixModeInputFromKeyboardEvent({
+        key: " ",
+        code: "Space",
+        ctrlKey: true,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+      }).data,
+    }).toStrictEqual({
+      arrow: "",
+      controlMinus: "-",
+      controlSpace: "\u0000",
+    });
+  });
+
   it("indexes prefix tab switching by snapshot order within the active space", () => {
     const snapshot = multiPaneSnapshot(
       [workspace("workspace-a", 1), workspace("workspace-b", 2)],
