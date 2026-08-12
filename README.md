@@ -402,6 +402,33 @@ work when the terminal's hidden keyboard input has focus. OS-reserved shortcuts 
 | Open the new-tab launch modal | `Cmd/Option+Shift+T` | `Meta/Alt+Shift+T` |
 | Confirm close for the focused split, or tab when only one split exists | `Cmd/Option+Shift+X` | `Meta/Alt+Shift+X` |
 
+### Herdr Prefix Mode
+
+Herdr prefix mode is additive: the app shortcuts above remain available. It is enabled by default
+and can be turned off under Settings → Terminal → Herdr keybindings. Use **Import from bridge**
+there to read the `[keys]` section from `~/.config/herdr/config.toml` on the selected bridge host.
+The prefix defaults to `Ctrl+B` when `prefix` is unset. `Ctrl+B` also remains available as a
+secondary prefix when the host config specifies another key.
+
+Phase 1 supports these Herdr actions:
+
+| Herdr action | Prefix binding |
+| --- | --- |
+| `new_tab` | `prefix+c` |
+| `next_tab` | `prefix+n` |
+| `previous_tab` | `prefix+p` |
+| `switch_tab` | `prefix+1..9` |
+| `close_pane` | `prefix+x` |
+| `close_tab` | `prefix+Shift+X` |
+| `focus_agent` | `prefix+Alt+1..9` when configured in `[keys]` |
+
+Press the prefix twice to send a literal prefix key to the terminal. Press `Esc` to cancel a
+pending prefix. `q` is **not** a cancel key because Herdr reserves `prefix+q` for detach; detach is
+not implemented in this phase.
+
+Prefix bindings for splits and spaces, tab reordering, `[keys.indexed]`, and `[[keys.command]]` are
+out of scope for phase 1.
+
 ## Runtime Model
 
 The bridge exposes:
