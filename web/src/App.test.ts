@@ -32,6 +32,7 @@ import {
   paneNoteListContains,
   shouldBlockDirtyNoteAutosave,
   shouldCollapseHostScope,
+  shouldImportHerdrKeysOnConnect,
   shouldRenderAgentRowInTabs,
   sidebarRowContext,
   shouldOfferSpaceHostGrouping,
@@ -1488,6 +1489,39 @@ describe("App multi-bridge helpers", () => {
     expect(nextVisibleTabEntry(entries, -1, -1).tab.tab_id).toBe("tab-b");
     expect(nextVisibleTabEntry(entries, 0, -1).tab.tab_id).toBe("tab-b");
     expect(nextVisibleTabEntry(entries, 1, 1).tab.tab_id).toBe("tab-a");
+  });
+
+  it("auto-imports Herdr keybindings once per ready bridge connection", () => {
+    const runtime = {
+      capabilityState: "ready" as const,
+      capabilities: { commands: [], herdr_keys: { version: 1 as const } },
+      connectionKey: "bridge-a:1",
+    };
+
+    expect({
+      firstConnect: shouldImportHerdrKeysOnConnect(runtime, null),
+      alreadyImported: shouldImportHerdrKeysOnConnect(runtime, "bridge-a:1"),
+      reconnected: shouldImportHerdrKeysOnConnect(
+        { ...runtime, connectionKey: "bridge-a:2" },
+        "bridge-a:1",
+      ),
+      probing: shouldImportHerdrKeysOnConnect(
+        { ...runtime, capabilityState: "probing" as const },
+        null,
+      ),
+      unsupported: shouldImportHerdrKeysOnConnect(
+        { ...runtime, capabilities: { commands: [] } },
+        null,
+      ),
+      disconnected: shouldImportHerdrKeysOnConnect(null, null),
+    }).toStrictEqual({
+      firstConnect: true,
+      alreadyImported: false,
+      reconnected: true,
+      probing: false,
+      unsupported: false,
+      disconnected: false,
+    });
   });
 
   it("builds prefix input from a configured key and the ctrl+b terminal byte", () => {

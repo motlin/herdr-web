@@ -59,6 +59,7 @@ const DEFAULT_BINDING_SOURCES: ReadonlyArray<
   ["switch_tab", "prefix+1..9"],
   ["close_tab", "prefix+shift+x"],
   ["close_pane", "prefix+x"],
+  ["focus_agent", "prefix+alt+1..9"],
 ];
 const HERDR_KEY_ACTIONS = new Set<HerdrKeyAction>([
   "new_tab",

@@ -78,10 +78,12 @@ import {
   DEFAULT_AGENT_FEATURES_IN_TABS,
   DEFAULT_MULTI_HOST_SPACE_SELECTION,
   DEFAULT_PREFIX_MODE_ENABLED,
+  DEFAULT_HERDR_KEYS_SOURCE,
   parseContentInsetBottomPx,
   parseContentInsetTopPx,
   parseMobileControlsScalePercent,
   parseAgentFeaturesInTabs,
+  parseHerdrKeysSourcePref,
   parseMultiHostSpaceSelection,
   parsePrefixModeEnabled,
 } from "./displayPrefs";
@@ -450,6 +452,7 @@ type DisplayPrefs = {
   agentFeaturesInTabs: boolean;
   multiHostSpaceSelection: boolean;
   prefixModeEnabled: boolean;
+  herdrKeysSource: string;
   sidebarWidth: number;
   notesPanelWidth: number;
   notesListPaneWidth: number;
@@ -501,7 +504,6 @@ const MAX_NOTES_PANEL_WIDTH = 840;
 const DEFAULT_NOTES_LIST_PANE_WIDTH = 240;
 const MIN_NOTES_LIST_PANE_WIDTH = 200;
 const MAX_NOTES_LIST_PANE_WIDTH = 420;
-const DEFAULT_HERDR_KEYS = parseHerdrKeysSource("");
 
 function readDisplayPrefs(): DisplayPrefs {
   const fallback: DisplayPrefs = {
@@ -518,6 +520,7 @@ function readDisplayPrefs(): DisplayPrefs {
     agentFeaturesInTabs: DEFAULT_AGENT_FEATURES_IN_TABS,
     multiHostSpaceSelection: DEFAULT_MULTI_HOST_SPACE_SELECTION,
     prefixModeEnabled: DEFAULT_PREFIX_MODE_ENABLED,
+    herdrKeysSource: DEFAULT_HERDR_KEYS_SOURCE,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     notesPanelWidth: DEFAULT_NOTES_PANEL_WIDTH,
     notesListPaneWidth: DEFAULT_NOTES_LIST_PANE_WIDTH,
@@ -711,6 +714,10 @@ function parseDisplayPrefsValue(
     prefixModeEnabled: parsePrefixModeEnabled(
       parsed.prefixModeEnabled,
       fallback.prefixModeEnabled,
+    ),
+    herdrKeysSource: parseHerdrKeysSourcePref(
+      parsed.herdrKeysSource,
+      fallback.herdrKeysSource,
     ),
     sidebarWidth,
     notesPanelWidth,
@@ -1168,8 +1175,10 @@ export function App() {
   const [terminalFocusToken, setTerminalFocusToken] = useState(0);
   const [terminalInputInjection, setTerminalInputInjection] =
     useState<TerminalInputInjection | null>(null);
-  const [herdrKeys, setHerdrKeys] = useState(DEFAULT_HERDR_KEYS);
+  const [herdrKeysSource, setHerdrKeysSource] = useState(initialPrefs.herdrKeysSource);
+  const herdrKeys = useMemo(() => parseHerdrKeysSource(herdrKeysSource), [herdrKeysSource]);
   const prefixModeStateRef = useRef<PrefixModeState>("idle");
+  const herdrKeysImportedConnectionRef = useRef<string | null>(null);
   const isCompactLayout = useIsCompactLayout();
   const isTouchInput = useIsTouchInput();
   const showMobileKeyboardHideRefit = isNativeAndroid();
@@ -1184,10 +1193,8 @@ export function App() {
   const selectedNotePaneKeyRef = useRef("");
 
   useEffect(() => {
-    if (!prefixModeEnabled) {
-      prefixModeStateRef.current = "idle";
-    }
-  }, [prefixModeEnabled]);
+    prefixModeStateRef.current = "idle";
+  }, [herdrKeys, prefixModeEnabled]);
   const notesListResizeLeftRef = useRef(0);
   const sidebarResizePressRef = useRef<{
     timer: number;
@@ -1250,6 +1257,7 @@ export function App() {
       setAgentFeaturesInTabs(prefs.agentFeaturesInTabs);
       setMultiHostSpaceSelection(prefs.multiHostSpaceSelection);
       setPrefixModeEnabled(prefs.prefixModeEnabled);
+      setHerdrKeysSource(prefs.herdrKeysSource);
       setSidebarWidth(prefs.sidebarWidth);
       setNotesPanelWidth(prefs.notesPanelWidth);
       setNotesListPaneWidth(prefs.notesListPaneWidth);
@@ -1484,15 +1492,44 @@ export function App() {
     applyGhosttyAppearanceSource(response.source);
     setError(null);
   }, [applyGhosttyAppearanceSource, selectedRuntime]);
+  const applyHerdrKeysSource = useCallback((source: string) => {
+    // Reject an unusable config before it reaches the persisted preferences.
+    parseHerdrKeysSource(source);
+    setHerdrKeysSource(source);
+  }, []);
   const importHerdrKeys = useCallback(async () => {
     if (!selectedRuntime) {
       throw new Error("Select a connected bridge before importing Herdr keybindings");
     }
     const response = await fetchHerdrKeys(selectedRuntime.httpUrl);
-    setHerdrKeys(parseHerdrKeysSource(response.source));
-    prefixModeStateRef.current = "idle";
+    applyHerdrKeysSource(response.source);
+    herdrKeysImportedConnectionRef.current = selectedRuntime.connectionKey;
     setError(null);
-  }, [selectedRuntime]);
+  }, [applyHerdrKeysSource, selectedRuntime]);
+  useEffect(() => {
+    const runtime = selectedRuntime;
+    if (
+      !displayPrefsLoaded ||
+      !runtime ||
+      !shouldImportHerdrKeysOnConnect(runtime, herdrKeysImportedConnectionRef.current)
+    ) {
+      return;
+    }
+    herdrKeysImportedConnectionRef.current = runtime.connectionKey;
+    let cancelled = false;
+    void fetchHerdrKeys(runtime.httpUrl)
+      .then((response) => {
+        if (!cancelled) {
+          applyHerdrKeysSource(response.source);
+        }
+      })
+      .catch(() => {
+        // Keep the persisted keybindings when the bridge cannot supply them.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyHerdrKeysSource, displayPrefsLoaded, selectedRuntime]);
   const selectedWsUrl = useMemo(
     () => selectedRuntime?.wsUrl ?? disconnectedWsUrl,
     [selectedRuntime?.connectionKey],
@@ -1871,6 +1908,7 @@ export function App() {
       agentFeaturesInTabs,
       multiHostSpaceSelection,
       prefixModeEnabled,
+      herdrKeysSource,
       sidebarWidth,
       notesPanelWidth,
       notesListPaneWidth,
@@ -1910,6 +1948,7 @@ export function App() {
     agentFeaturesInTabs,
     multiHostSpaceSelection,
     prefixModeEnabled,
+    herdrKeysSource,
     sidebarWidth,
     notesPanelWidth,
     notesListPaneWidth,
@@ -6008,6 +6047,19 @@ export function nextVisibleTabEntry(
   step: -1 | 1,
 ): ScopedTabEntry {
   return entries[nextVisibleEntryIndex(entries.length, currentIndex, step)];
+}
+
+export function shouldImportHerdrKeysOnConnect(
+  runtime: Pick<BridgeRuntime, "capabilities" | "capabilityState" | "connectionKey"> | null,
+  importedConnectionKey: string | null,
+) {
+  if (!runtime || runtime.capabilityState !== "ready") {
+    return false;
+  }
+  if (!supportsHerdrKeysImport(runtime.capabilities)) {
+    return false;
+  }
+  return runtime.connectionKey !== importedConnectionKey;
 }
 
 function formatHerdrKeyChord(chord: KeyChord) {

@@ -1,9 +1,13 @@
+import { parseHerdrKeysSource } from "./herdrKeys";
+
 export const DEFAULT_CONTENT_INSET_TOP_PX = 0;
 export const DEFAULT_CONTENT_INSET_BOTTOM_PX = 0;
 export const DEFAULT_MOBILE_CONTROLS_SCALE_PERCENT = 100;
 export const DEFAULT_AGENT_FEATURES_IN_TABS = true;
 export const DEFAULT_MULTI_HOST_SPACE_SELECTION = true;
 export const DEFAULT_PREFIX_MODE_ENABLED = true;
+export const DEFAULT_HERDR_KEYS_SOURCE = "";
+export const MAX_HERDR_KEYS_SOURCE_LENGTH = 4096;
 
 export const MIN_CONTENT_INSET_TOP_PX = 0;
 export const MAX_CONTENT_INSET_TOP_PX = 96;
@@ -51,6 +55,21 @@ export function parsePrefixModeEnabled(
   fallback = DEFAULT_PREFIX_MODE_ENABLED,
 ) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+export function parseHerdrKeysSourcePref(
+  value: unknown,
+  fallback = DEFAULT_HERDR_KEYS_SOURCE,
+) {
+  if (typeof value !== "string" || value.length > MAX_HERDR_KEYS_SOURCE_LENGTH) {
+    return fallback;
+  }
+  try {
+    parseHerdrKeysSource(value);
+    return value;
+  } catch {
+    return fallback;
+  }
 }
 
 export function parseMultiHostSpaceSelection(

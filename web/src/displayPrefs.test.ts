@@ -16,7 +16,11 @@ import {
   parseAgentFeaturesInTabs,
   parseMultiHostSpaceSelection,
   parsePrefixModeEnabled,
+  DEFAULT_HERDR_KEYS_SOURCE,
+  MAX_HERDR_KEYS_SOURCE_LENGTH,
+  parseHerdrKeysSourcePref,
 } from "./displayPrefs";
+import { parseHerdrKeysSource } from "./herdrKeys";
 
 describe("display preferences", () => {
   it("parses and clamps content inset values", () => {
@@ -62,6 +66,33 @@ describe("display preferences", () => {
     expect(parseMultiHostSpaceSelection(undefined)).toBe(DEFAULT_MULTI_HOST_SPACE_SELECTION);
     expect(parseMultiHostSpaceSelection("false")).toBe(DEFAULT_MULTI_HOST_SPACE_SELECTION);
     expect(parseMultiHostSpaceSelection(undefined, false)).toBe(false);
+  });
+
+  it("keeps a persisted Herdr keys source across reloads", () => {
+    const source = 'prefix = "backtick"\nfocus_agent = "prefix+alt+1..9"\n';
+    const reloaded = JSON.parse(JSON.stringify({ herdrKeysSource: source })) as {
+      herdrKeysSource: unknown;
+    };
+
+    expect(parseHerdrKeysSourcePref(reloaded.herdrKeysSource)).toBe(source);
+    expect(
+      parseHerdrKeysSource(parseHerdrKeysSourcePref(reloaded.herdrKeysSource)).prefix,
+    ).toStrictEqual({
+      key: "`",
+      ctrl: false,
+      shift: false,
+      alt: false,
+      meta: false,
+    });
+  });
+
+  it("falls back for unusable Herdr keys sources", () => {
+    expect(parseHerdrKeysSourcePref(undefined)).toBe(DEFAULT_HERDR_KEYS_SOURCE);
+    expect(parseHerdrKeysSourcePref(42)).toBe(DEFAULT_HERDR_KEYS_SOURCE);
+    expect(parseHerdrKeysSourcePref('prefix = "hyper+q"')).toBe(DEFAULT_HERDR_KEYS_SOURCE);
+    expect(
+      parseHerdrKeysSourcePref('prefix = "backtick"'.padEnd(MAX_HERDR_KEYS_SOURCE_LENGTH + 1, "\n")),
+    ).toBe(DEFAULT_HERDR_KEYS_SOURCE);
   });
 
   it("parses prefix mode enablement and defaults it on", () => {

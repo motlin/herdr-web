@@ -139,6 +139,21 @@ describe("Herdr key config import", () => {
             },
           },
         ],
+        [
+          "focus_agent",
+          {
+            type: "indexed",
+            prefix: true,
+            modifiers: {
+              ctrl: false,
+              shift: false,
+              alt: true,
+              meta: false,
+            },
+            first: 1,
+            last: 9,
+          },
+        ],
       ]),
     });
   });
