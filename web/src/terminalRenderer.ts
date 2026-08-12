@@ -20,7 +20,6 @@ import {
   encodeTerminalMouseReport,
   terminalMouseButtonFromDomButton,
 } from "./terminalMouseReport";
-import type { TerminalMouseButton } from "./terminalMouseReport";
 import {
   beginTouchSelectionEndpointDrag,
   commitTouchSelectionStart,
@@ -523,7 +522,7 @@ export class GhosttyRenderer implements TerminalRenderer {
     let mouseDownY: number | null = null;
     let suppressedMousePress: { url: string; openedFromContextMenu: boolean } | null = null;
     let mouseReportConsumedClick = false;
-    const heldMouseButtons = new Set<TerminalMouseButton>();
+    const heldMouseButtons = new Set<number>();
     let selectionState: TerminalTouchSelectionState = idleTouchSelectionState;
     let endpointBubble: HTMLDivElement | null = null;
     let loupe: { root: HTMLDivElement; canvas: HTMLCanvasElement } | null = null;
@@ -1167,8 +1166,67 @@ export class GhosttyRenderer implements TerminalRenderer {
       }
       return false;
     };
-    const beginMouseDragSession = (button: TerminalMouseButton) => {
-      heldMouseButtons.add(button);
+    const emitMouseReport = (
+      event: MouseEvent,
+      kind: "drag" | "release",
+      domButton: number,
+    ) => {
+      const button = terminalMouseButtonFromDomButton(domButton);
+      if (!button) {
+        return;
+      }
+      const point = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
+      const report = encodeTerminalMouseReport(
+        {
+          kind,
+          button,
+          wheel: null,
+          col: point.col,
+          row: point.row,
+          pixelX: point.pixelX,
+          pixelY: point.pixelY,
+          shift: event.shiftKey,
+          alt: event.altKey,
+          ctrl: event.ctrlKey,
+        },
+        this.#terminalMouseMode(terminal),
+      );
+      if (report) {
+        this.#writeTerminalInput(terminal, report);
+      }
+    };
+    const endMouseDragSession = () => {
+      window.removeEventListener("mousemove", onWindowMouseMove, { capture: true });
+      window.removeEventListener("mouseup", onWindowMouseUp, { capture: true });
+      heldMouseButtons.clear();
+    };
+    const onWindowMouseMove = (event: MouseEvent) => {
+      if (heldMouseButtons.size === 0) {
+        return;
+      }
+      event.stopPropagation();
+      for (const domButton of heldMouseButtons) {
+        emitMouseReport(event, "drag", domButton);
+        break;
+      }
+    };
+    const onWindowMouseUp = (event: MouseEvent) => {
+      if (!heldMouseButtons.has(event.button)) {
+        return;
+      }
+      suppressTerminalMouseEvent(event);
+      emitMouseReport(event, "release", event.button);
+      heldMouseButtons.delete(event.button);
+      if (heldMouseButtons.size === 0) {
+        endMouseDragSession();
+      }
+    };
+    const beginMouseDragSession = (event: MouseEvent) => {
+      if (heldMouseButtons.size === 0) {
+        window.addEventListener("mousemove", onWindowMouseMove, { capture: true });
+        window.addEventListener("mouseup", onWindowMouseUp, { capture: true });
+      }
+      heldMouseButtons.add(event.button);
     };
     const onMouseDown = (event: MouseEvent) => {
       mouseDownX = event.clientX;
@@ -1213,7 +1271,7 @@ export class GhosttyRenderer implements TerminalRenderer {
         if (!redirectTapFocus(event)) {
           terminal.focus();
         }
-        beginMouseDragSession(button);
+        beginMouseDragSession(event);
         mouseReportConsumedClick = true;
         return;
       }
@@ -1295,6 +1353,7 @@ export class GhosttyRenderer implements TerminalRenderer {
     container.addEventListener("contextmenu", onContextMenu, { capture: true });
     container.addEventListener("click", onClick, { capture: true });
     this.#touchCleanup = () => {
+      endMouseDragSession();
       resetTouchSelection(true);
       resetTouchTracking();
       clearSelectionClearTimer();

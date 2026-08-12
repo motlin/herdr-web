@@ -6,7 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GhosttyRenderer } from "./terminalRenderer";
 
 const ghosttyMocks = vi.hoisted(() => ({
+  focus: vi.fn(),
+  input: vi.fn(),
   lineText: "https://example.com ",
+  modes: new Set<number>(),
   mouseTracking: false,
   render: vi.fn(),
   setTheme: vi.fn(),
@@ -36,8 +39,9 @@ vi.mock("ghostty-web", () => ({
     cols = 80;
     rows = 24;
     options: Record<string, unknown>;
+    canvas = document.createElement("canvas");
     renderer = {
-      getCanvas: () => document.createElement("canvas"),
+      getCanvas: () => this.canvas,
       getMetrics: () => ({ height: 16, width: 9 }),
       render: ghosttyMocks.render,
       setTheme: ghosttyMocks.setTheme,
@@ -47,6 +51,18 @@ vi.mock("ghostty-web", () => ({
 
     constructor(options: Record<string, unknown>) {
       this.options = options;
+      this.canvas.getBoundingClientRect = () =>
+        ({
+          bottom: 384,
+          height: 384,
+          left: 0,
+          right: 720,
+          top: 0,
+          width: 720,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect;
       ghosttyMocks.terminals.push(this);
     }
 
@@ -54,6 +70,12 @@ vi.mock("ghostty-web", () => ({
     attachCustomWheelEventHandler() {}
     clearSelection() {}
     dispose() {}
+    focus() {
+      ghosttyMocks.focus();
+    }
+    getMode(modeNumber: number) {
+      return ghosttyMocks.modes.has(modeNumber);
+    }
     hasMouseTracking() {
       return ghosttyMocks.mouseTracking;
     }
@@ -65,11 +87,17 @@ vi.mock("ghostty-web", () => ({
     }
     loadAddon() {}
     open() {}
+    input(data: string, wasUserInput: boolean) {
+      ghosttyMocks.input(data, wasUserInput);
+    }
   },
 }));
 
 beforeEach(() => {
+  ghosttyMocks.focus.mockClear();
+  ghosttyMocks.input.mockClear();
   ghosttyMocks.lineText = "https://example.com ";
+  ghosttyMocks.modes.clear();
   ghosttyMocks.mouseTracking = false;
   ghosttyMocks.render.mockClear();
   ghosttyMocks.setTheme.mockClear();
@@ -174,6 +202,45 @@ describe("GhosttyRenderer", () => {
       contextMenuDefaultPrevented: true,
       openCalls: [["https://example.com/", "_blank", "noopener,noreferrer"]],
       pressDefaultPrevented: true,
+    });
+  });
+
+  it("releases a tracked mouse button at the clamped edge outside the terminal", async () => {
+    ghosttyMocks.mouseTracking = true;
+    ghosttyMocks.modes.add(1002);
+    ghosttyMocks.modes.add(1006);
+    const container = document.createElement("div");
+    const renderer = new GhosttyRenderer();
+    await renderer.mount(container);
+    const press = new MouseEvent("mousedown", {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: 4,
+      clientY: 8,
+    });
+    const release = new MouseEvent("mouseup", {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: 10_000,
+      clientY: 8,
+    });
+
+    container.dispatchEvent(press);
+    window.dispatchEvent(release);
+
+    expect({
+      inputCalls: ghosttyMocks.input.mock.calls,
+      pressDefaultPrevented: press.defaultPrevented,
+      releaseDefaultPrevented: release.defaultPrevented,
+    }).toStrictEqual({
+      inputCalls: [
+        ["\x1b[<0;1;1M", true],
+        ["\x1b[<0;80;1m", true],
+      ],
+      pressDefaultPrevented: true,
+      releaseDefaultPrevented: true,
     });
   });
 });
