@@ -3,6 +3,7 @@ mod agent_pins;
 mod launcher_presets;
 mod notes;
 mod session;
+mod sidebar_config;
 mod store_util;
 mod web_bridge;
 mod workspace;

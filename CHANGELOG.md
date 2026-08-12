@@ -62,6 +62,7 @@
   clicks, drags, pointer motion, and wheel events. Hold Shift to select text locally or use
   Shift+wheel to scroll through local scrollback; taps on mobile now click controls in terminal
   applications.
+- Added bridge parsing for Herdr's configurable TUI sidebar token rows.
 
 ### Changed
 
