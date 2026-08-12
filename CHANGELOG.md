@@ -58,6 +58,10 @@
 - Added a bridge capability for importing supported keybindings from the host's Herdr config.
 - Added default-on Herdr prefix keybindings with a persisted toggle and one-action import from the
   selected bridge.
+- Added browser mouse forwarding for terminal applications that request mouse tracking, including
+  clicks, drags, pointer motion, and wheel events. Hold Shift to select text locally or use
+  Shift+wheel to scroll through local scrollback; taps on mobile now click controls in terminal
+  applications.
 
 ### Changed
 
