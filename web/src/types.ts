@@ -10,6 +10,12 @@ export type WorkspaceInfo = {
   active_tab_id: string;
   agent_status: AgentStatus;
   can_clear_name?: boolean;
+  git?: {
+    branch?: string;
+    ahead?: number;
+    behind?: number;
+  };
+  tokens?: Record<string, string>;
   worktree?: {
     repo_key: string;
     repo_name: string;
@@ -46,6 +52,7 @@ export type PaneInfo = {
   display_agent?: string;
   agent_status: AgentStatus;
   state_labels?: Record<string, string>;
+  tokens?: Record<string, string>;
   revision: number;
 };
 

@@ -54,6 +54,9 @@ export type BridgeCapabilities = {
   launcher_presets?: {
     version: 1;
   };
+  sidebar_config?: {
+    version: number;
+  };
   bridge_version?: string;
   web_compat?: number;
   min_android_app_compat?: number;
@@ -1098,6 +1101,10 @@ export function parseCapabilities(value: unknown): BridgeCapabilities {
         : undefined,
     launcher_presets:
       isRecord(value.launcher_presets) && value.launcher_presets.version === 1
+        ? { version: 1 }
+        : undefined,
+    sidebar_config:
+      isRecord(value.sidebar_config) && value.sidebar_config.version === 1
         ? { version: 1 }
         : undefined,
   };
