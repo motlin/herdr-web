@@ -20,6 +20,7 @@ import {
   encodeTerminalMouseReport,
   terminalMouseButtonFromDomButton,
 } from "./terminalMouseReport";
+import type { TerminalMouseEvent } from "./terminalMouseReport";
 import {
   beginTouchSelectionEndpointDrag,
   commitTouchSelectionStart,
@@ -522,6 +523,13 @@ export class GhosttyRenderer implements TerminalRenderer {
     let mouseDownY: number | null = null;
     let suppressedMousePress: { url: string; openedFromContextMenu: boolean } | null = null;
     let mouseReportConsumedClick = false;
+    let lastMotionCell: TerminalCellPosition | null = null;
+    let lastMotionMode: TerminalMouseMode | null = null;
+    let pendingMotionReport: {
+      descriptor: TerminalMouseEvent;
+      mode: TerminalMouseMode;
+    } | null = null;
+    let motionAnimationFrame: number | null = null;
     const heldMouseButtons = new Set<number>();
     let selectionState: TerminalTouchSelectionState = idleTouchSelectionState;
     let endpointBubble: HTMLDivElement | null = null;
@@ -975,6 +983,9 @@ export class GhosttyRenderer implements TerminalRenderer {
         event.stopImmediatePropagation();
       }
     };
+    const stopTerminalMouseEvent = (event: MouseEvent) => {
+      event.stopPropagation();
+    };
     const redirectTapFocus = (event: TouchEvent | MouseEvent) => {
       const terminalHadFocusOrGrace =
         document.activeElement === terminal.textarea ||
@@ -1195,6 +1206,21 @@ export class GhosttyRenderer implements TerminalRenderer {
         this.#writeTerminalInput(terminal, report);
       }
     };
+    const resetMotionTracking = () => {
+      lastMotionCell = null;
+      lastMotionMode = null;
+      pendingMotionReport = null;
+      if (motionAnimationFrame !== null) {
+        window.cancelAnimationFrame(motionAnimationFrame);
+        motionAnimationFrame = null;
+      }
+    };
+    const emitMotionReport = (descriptor: TerminalMouseEvent, mode: TerminalMouseMode) => {
+      const report = encodeTerminalMouseReport(descriptor, mode);
+      if (report) {
+        this.#writeTerminalInput(terminal, report);
+      }
+    };
     const endMouseDragSession = () => {
       window.removeEventListener("mousemove", onWindowMouseMove, { capture: true });
       window.removeEventListener("mouseup", onWindowMouseUp, { capture: true });
@@ -1214,6 +1240,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       if (!heldMouseButtons.has(event.button)) {
         return;
       }
+      resetMotionTracking();
       suppressTerminalMouseEvent(event);
       emitMouseReport(event, "release", event.button);
       heldMouseButtons.delete(event.button);
@@ -1229,6 +1256,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       heldMouseButtons.add(event.button);
     };
     const onMouseDown = (event: MouseEvent) => {
+      resetMotionTracking();
       mouseDownX = event.clientX;
       mouseDownY = event.clientY;
       suppressedMousePress = null;
@@ -1290,7 +1318,66 @@ export class GhosttyRenderer implements TerminalRenderer {
         redirectTapFocus(event);
       }
     };
+    const onMouseMove = (event: MouseEvent) => {
+      const mode = this.#terminalMouseMode(terminal);
+      if (
+        lastMotionMode === null ||
+        lastMotionMode.tracking !== mode.tracking ||
+        lastMotionMode.encoding !== mode.encoding
+      ) {
+        resetMotionTracking();
+        lastMotionMode = mode;
+      }
+      if (
+        mode.tracking !== "any" ||
+        heldMouseButtons.size > 0 ||
+        event.shiftKey ||
+        suppressCompatMouseEvent(event)
+      ) {
+        return;
+      }
+      stopTerminalMouseEvent(event);
+      const point = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
+      if (!point.inside) {
+        return;
+      }
+      if (lastMotionCell?.col === point.col && lastMotionCell.row === point.row) {
+        return;
+      }
+      lastMotionCell = { col: point.col, row: point.row };
+      const descriptor: TerminalMouseEvent = {
+        kind: "move",
+        button: null,
+        wheel: null,
+        col: point.col,
+        row: point.row,
+        pixelX: point.pixelX,
+        pixelY: point.pixelY,
+        shift: event.shiftKey,
+        alt: event.altKey,
+        ctrl: event.ctrlKey,
+      };
+      if (mode.encoding !== "sgr-pixels") {
+        emitMotionReport(descriptor, mode);
+        return;
+      }
+      pendingMotionReport = { descriptor, mode };
+      if (motionAnimationFrame === null) {
+        motionAnimationFrame = window.requestAnimationFrame(() => {
+          motionAnimationFrame = null;
+          const pending = pendingMotionReport;
+          pendingMotionReport = null;
+          if (pending) {
+            emitMotionReport(pending.descriptor, pending.mode);
+          }
+        });
+      }
+    };
+    const onMouseLeave = () => {
+      resetMotionTracking();
+    };
     const onMouseUp = (event: MouseEvent) => {
+      resetMotionTracking();
       if (event.button === 0 && suppressedMousePress) {
         suppressTerminalMouseEvent(event);
         return;
@@ -1349,11 +1436,14 @@ export class GhosttyRenderer implements TerminalRenderer {
     container.addEventListener("touchend", onTouchEnd, { capture: true });
     container.addEventListener("touchcancel", onTouchCancel, { capture: true });
     container.addEventListener("mousedown", onMouseDown, { capture: true });
+    container.addEventListener("mousemove", onMouseMove, { capture: true });
+    container.addEventListener("mouseleave", onMouseLeave, { capture: true });
     container.addEventListener("mouseup", onMouseUp, { capture: true });
     container.addEventListener("contextmenu", onContextMenu, { capture: true });
     container.addEventListener("click", onClick, { capture: true });
     this.#touchCleanup = () => {
       endMouseDragSession();
+      resetMotionTracking();
       resetTouchSelection(true);
       resetTouchTracking();
       clearSelectionClearTimer();
@@ -1362,6 +1452,8 @@ export class GhosttyRenderer implements TerminalRenderer {
       container.removeEventListener("touchend", onTouchEnd, { capture: true });
       container.removeEventListener("touchcancel", onTouchCancel, { capture: true });
       container.removeEventListener("mousedown", onMouseDown, { capture: true });
+      container.removeEventListener("mousemove", onMouseMove, { capture: true });
+      container.removeEventListener("mouseleave", onMouseLeave, { capture: true });
       container.removeEventListener("mouseup", onMouseUp, { capture: true });
       container.removeEventListener("contextmenu", onContextMenu, { capture: true });
       container.removeEventListener("click", onClick, { capture: true });

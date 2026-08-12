@@ -205,6 +205,76 @@ describe("GhosttyRenderer", () => {
     });
   });
 
+  it("reports button-motion only while a tracked mouse button is held", async () => {
+    ghosttyMocks.mouseTracking = true;
+    ghosttyMocks.modes.add(1002);
+    ghosttyMocks.modes.add(1006);
+    const container = document.createElement("div");
+    const renderer = new GhosttyRenderer();
+    await renderer.mount(container);
+    const bareMove = new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: 4,
+      clientY: 8,
+    });
+    const press = new MouseEvent("mousedown", {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: 4,
+      clientY: 8,
+    });
+    const drag = new MouseEvent("mousemove", {
+      bubbles: true,
+      buttons: 1,
+      clientX: 13,
+      clientY: 8,
+    });
+
+    container.dispatchEvent(bareMove);
+    container.dispatchEvent(press);
+    window.dispatchEvent(drag);
+    renderer.dispose();
+
+    expect(ghosttyMocks.input.mock.calls).toStrictEqual([
+      ["\x1b[<0;1;1M", true],
+      ["\x1b[<32;2;1M", true],
+    ]);
+  });
+
+  it("deduplicates any-motion reports within a terminal cell", async () => {
+    ghosttyMocks.mouseTracking = true;
+    ghosttyMocks.modes.add(1003);
+    ghosttyMocks.modes.add(1006);
+    const container = document.createElement("div");
+    const renderer = new GhosttyRenderer();
+    await renderer.mount(container);
+    const firstMove = new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: 4,
+      clientY: 8,
+    });
+    const sameCellMove = new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: 8,
+      clientY: 9,
+    });
+    const nextCellMove = new MouseEvent("mousemove", {
+      bubbles: true,
+      clientX: 13,
+      clientY: 8,
+    });
+
+    container.dispatchEvent(firstMove);
+    container.dispatchEvent(sameCellMove);
+    container.dispatchEvent(nextCellMove);
+
+    expect(ghosttyMocks.input.mock.calls).toStrictEqual([
+      ["\x1b[<35;1;1M", true],
+      ["\x1b[<35;2;1M", true],
+    ]);
+  });
+
   it("releases a tracked mouse button at the clamped edge outside the terminal", async () => {
     ghosttyMocks.mouseTracking = true;
     ghosttyMocks.modes.add(1002);
