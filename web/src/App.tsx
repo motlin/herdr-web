@@ -155,7 +155,11 @@ import { createSnapshotRefreshController } from "./refreshCoordinator";
 import { SidebarTokenRows } from "./SidebarRow";
 import {
   DEFAULT_SIDEBAR_CONFIG,
+  agentTokenContext,
+  resolveAgentRows,
   resolveSpaceRows,
+  rowsContainStateText,
+  shouldShowTabToken,
   spaceTokenContext,
 } from "./sidebarTokens";
 import type { ResolvedRow } from "./sidebarTokens";
@@ -6934,6 +6938,7 @@ function Switcher({
       ? null
       : group.tabs.map(({ tab, panes: tabPanes }) => {
           const tabLabel = displayTabLabel(tab, group.snapshot.panes);
+          const tabHasCustomName = canClearTabName(tab);
           const rowContext = sidebarRowContext(
             agentGroup,
             hostScope,
@@ -6959,14 +6964,31 @@ function Switcher({
                 renderAsAgent ? "agent" : "pane",
               );
             if (renderAsAgent) {
+              const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+              const rows = resolveAgentRows(
+                sidebarConfig.agents,
+                agentTokenContext(pane, {
+                  workspaceLabel: rowContext.workspaceLabel,
+                  tabLabel: shouldShowTabToken(
+                    group.workspace.tab_count,
+                    tabHasCustomName,
+                  )
+                    ? tabLabel
+                    : undefined,
+                }),
+              );
               return (
                 <AgentRow
                   key={`${group.bridgeId}:${pane.pane_id}`}
                   index={index}
                   pane={pane}
-                  workspace={rowContext.workspaceLabel ? group.workspace : undefined}
-                  tabLabel={tabLabel}
-                  bridgeLabel={rowContext.bridgeLabel}
+                  rows={rows}
+                  subtitle={agentSubtitle(
+                    pane,
+                    rowContext.workspaceLabel ? group.workspace : undefined,
+                    tabLabel,
+                    rowContext.bridgeLabel,
+                  )}
                   pinned={pinned}
                   active={active}
                   onSelect={onSelect}
@@ -7246,14 +7268,33 @@ function Switcher({
       entry.bridgeLabel,
       entry.workspace?.label ?? "workspace",
     );
+    const tab = entry.snapshot.tabs.find((item) => item.tab_id === entry.pane.tab_id);
+    const tabHasCustomName = tab ? canClearTabName(tab) : false;
+    const sidebarConfig = DEFAULT_SIDEBAR_CONFIG;
+    const rows = resolveAgentRows(
+      sidebarConfig.agents,
+      agentTokenContext(entry.pane, {
+        workspaceLabel: rowContext.workspaceLabel,
+        tabLabel: shouldShowTabToken(
+          entry.workspace?.tab_count ?? 0,
+          tabHasCustomName,
+        )
+          ? entry.tabLabel
+          : undefined,
+      }),
+    );
     return (
       <AgentRow
         key={`${entry.bridgeId}:${entry.pane.pane_id}`}
         index={index}
         pane={entry.pane}
-        workspace={rowContext.workspaceLabel ? entry.workspace : undefined}
-        tabLabel={entry.tabLabel}
-        bridgeLabel={rowContext.bridgeLabel}
+        rows={rows}
+        subtitle={agentSubtitle(
+          entry.pane,
+          rowContext.workspaceLabel ? entry.workspace : undefined,
+          entry.tabLabel,
+          rowContext.bridgeLabel,
+        )}
         pinned={entry.pinned === true}
         active={
           entry.bridgeId === selectedBridgeId &&
@@ -9252,11 +9293,10 @@ function PaneRow({
   );
 }
 
-function AgentRow({
+export function AgentRow({
   pane,
-  workspace,
-  tabLabel,
-  bridgeLabel,
+  rows,
+  subtitle,
   pinned,
   active,
   index,
@@ -9264,9 +9304,8 @@ function AgentRow({
   onMenu,
 }: {
   pane: PaneInfo;
-  workspace?: WorkspaceInfo;
-  tabLabel?: string;
-  bridgeLabel?: string;
+  rows: ResolvedRow[];
+  subtitle: string;
   pinned: boolean;
   active: boolean;
   index: number;
@@ -9281,21 +9320,22 @@ function AgentRow({
       type="button"
       data-active={active}
       data-status={pane.agent_status}
+      title={subtitle}
       style={{ animationDelay: `${Math.min(index, 14) * 22}ms` }}
       {...press}
     >
-      <span className="dot" data-status={pane.agent_status} />
-      <span className="pane-body">
-        <span className="pane-name pane-title">
-          {iconKind ? <AgentIcon kind={iconKind} /> : null}
-          {pinned ? (
-            <Pin className="agent-pin-indicator" size={10} aria-label="Pinned" />
-          ) : null}
-          <span className="pane-title-text">{agentTitle(pane)}</span>
-        </span>
-        <span className="pane-meta mono">{agentSubtitle(pane, workspace, tabLabel, bridgeLabel)}</span>
+      <span className="agent-row-leading">
+        {iconKind ? <AgentIcon kind={iconKind} /> : null}
+        {pinned ? (
+          <Pin className="agent-pin-indicator" size={10} aria-label="Pinned" />
+        ) : null}
       </span>
-      {isLoud(pane.agent_status) ? (
+      <SidebarTokenRows
+        rows={rows}
+        status={pane.agent_status}
+        variant="agent"
+      />
+      {isLoud(pane.agent_status) && !rowsContainStateText(rows) ? (
         <span className="pane-word" data-status={pane.agent_status}>
           {statusLabel(pane.agent_status)}
         </span>
@@ -9668,10 +9708,6 @@ function compareLastStatusTransition(a: ScopedAgentPane, b: ScopedAgentPane) {
     return bTransition - aTransition;
   }
   return 0;
-}
-
-function agentTitle(pane: PaneInfo) {
-  return pane.display_agent || pane.label || pane.agent || pane.title || paneTitle(pane);
 }
 
 export function agentSubtitle(

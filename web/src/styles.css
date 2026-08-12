@@ -873,12 +873,13 @@ button {
 }
 
 .agent-row {
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.agent-row .pane-name {
-  color: var(--text);
-  font-weight: 550;
+.agent-row-leading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .pane-title {

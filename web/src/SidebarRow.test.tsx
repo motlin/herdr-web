@@ -3,18 +3,25 @@
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { SpaceRow } from "./App";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AgentRow, SpaceRow } from "./App";
 import { SidebarTokenRows } from "./SidebarRow";
 import {
   DEFAULT_SIDEBAR_CONFIG,
+  agentTokenContext,
+  parseSidebarConfig,
   resolveAgentRows,
   resolveSpaceRows,
   type ResolvedRow,
 } from "./sidebarTokens";
-import type { WorkspaceInfo } from "./types";
+import type { PaneInfo, WorkspaceInfo } from "./types";
 
 const roots: Root[] = [];
+
+beforeEach(() => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
+    .IS_REACT_ACT_ENVIRONMENT = true;
+});
 
 afterEach(async () => {
   await act(async () => {
@@ -151,6 +158,73 @@ describe("SpaceRow", () => {
   });
 });
 
+describe("AgentRow", () => {
+  it("renders default TUI token rows with the icon and pin fixed before them", async () => {
+    const pane = agentPane();
+    const rows = resolveAgentRows(
+      DEFAULT_SIDEBAR_CONFIG.agents,
+      agentTokenContext(pane, { workspaceLabel: "herdr-web", tabLabel: "CLI" }),
+    );
+    const container = await renderAgentRow(
+      pane,
+      rows,
+      "host-a · herdr-web · CLI · project · Reviewing",
+    );
+    const button = container.querySelector<HTMLButtonElement>(".agent-row");
+
+    expect({
+      title: button?.title,
+      rows: [...container.querySelectorAll(".sb-row")].map(
+        (row) => row.textContent,
+      ),
+      childClassNames: [...(button?.children ?? [])].map(
+        (element) => element.getAttribute("class"),
+      ),
+      leadingClassNames: [...(button?.querySelector(".agent-row-leading")?.children ?? [])].map(
+        (element) => element.getAttribute("class"),
+      ),
+      statusBadge: container.querySelector(".pane-word")?.textContent,
+    }).toStrictEqual({
+      title: "host-a · herdr-web · CLI · project · Reviewing",
+      rows: ["● herdr-web · CLI", "claude"],
+      childClassNames: [
+        "agent-row-leading",
+        "sb-rows",
+        "pane-word",
+      ],
+      leadingClassNames: [
+        "agent-icon agent-icon-claude",
+        "lucide lucide-pin agent-pin-indicator",
+      ],
+      statusBadge: "working",
+    });
+  });
+
+  it("suppresses the status badge when the token rows contain state text", async () => {
+    const pane = agentPane();
+    const config = parseSidebarConfig({
+      agents: {
+        rows: [["state_icon", "workspace", "state_text"], ["agent"]],
+      },
+    });
+    const rows = resolveAgentRows(
+      config.agents,
+      agentTokenContext(pane, { workspaceLabel: "herdr-web", tabLabel: "CLI" }),
+    );
+    const container = await renderAgentRow(pane, rows, "Agent details");
+
+    expect({
+      rows: [...container.querySelectorAll(".sb-row")].map(
+        (row) => row.textContent,
+      ),
+      statusBadge: container.querySelector(".pane-word")?.textContent,
+    }).toStrictEqual({
+      rows: ["● herdr-web · Reviewing", "claude"],
+      statusBadge: undefined,
+    });
+  });
+});
+
 async function renderRows(
   rows: ResolvedRow[],
   status: "blocked" | "working" | "done" | "idle" | "unknown",
@@ -208,4 +282,48 @@ async function renderSpaceRow(
   });
 
   return container;
+}
+
+async function renderAgentRow(
+  pane: PaneInfo,
+  rows: ResolvedRow[],
+  subtitle: string,
+) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  roots.push(root);
+
+  await act(async () => {
+    root.render(
+      <AgentRow
+        pane={pane}
+        rows={rows}
+        subtitle={subtitle}
+        pinned
+        active
+        index={0}
+        onSelect={vi.fn()}
+        onMenu={vi.fn()}
+      />,
+    );
+  });
+
+  return container;
+}
+
+function agentPane(): PaneInfo {
+  return {
+    pane_id: "pane-100",
+    terminal_id: "terminal-100",
+    workspace_id: "workspace-100",
+    tab_id: "tab-100",
+    focused: true,
+    foreground_cwd: "/work/project",
+    agent: "claude",
+    display_agent: "claude",
+    agent_status: "working",
+    state_labels: { working: "Reviewing" },
+    revision: 1,
+  };
 }
