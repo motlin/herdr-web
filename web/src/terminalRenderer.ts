@@ -10,6 +10,8 @@ import { terminalEndpointBubblePosition } from "./terminalEndpointBubblePosition
 import { terminalLoupeCursorGeometry } from "./terminalLoupeCursorGeometry";
 import { terminalTapFocusAction } from "./terminalTapFocus";
 import type { TerminalTapFocusResult } from "./terminalTapFocus";
+import { terminalMouseMode } from "./terminalMouseMode";
+import type { TerminalMouseMode } from "./terminalMouseMode";
 import {
   terminalAccessibleText,
   TerminalAccessibleTextPublisher,
@@ -447,6 +449,24 @@ export class GhosttyRenderer implements TerminalRenderer {
         return true;
       }
       throw error;
+    }
+  }
+
+  // eslint-disable-next-line no-unused-private-class-members
+  #terminalMouseMode(terminal: Terminal): TerminalMouseMode {
+    try {
+      return terminalMouseMode((modeNumber) => terminal.getMode(modeNumber, false));
+    } catch {
+      return { tracking: "off", encoding: "legacy" };
+    }
+  }
+
+  // eslint-disable-next-line no-unused-private-class-members
+  #writeTerminalInput(terminal: Terminal, data: string) {
+    try {
+      terminal.input(data, true);
+    } catch {
+      return;
     }
   }
 
@@ -937,7 +957,7 @@ export class GhosttyRenderer implements TerminalRenderer {
       if (mouseTracking && !mouseTrackingOverride) {
         return null;
       }
-      const position = touchCellPosition(terminal, event.clientX, event.clientY);
+      const position = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
       return terminalUrlTapTarget(
         terminalLinkAt(terminal, position),
         mouseTracking,
@@ -1629,9 +1649,14 @@ function textareaKeyboardEventOutput(event: KeyboardEvent) {
   return event.shiftKey ? "\x1B[Z" : "\t";
 }
 
-function touchCellPosition(terminal: Terminal, clientX: number, clientY: number): TerminalCellPosition {
+function touchCellPosition(
+  terminal: Terminal,
+  clientX: number,
+  clientY: number,
+  canvasRect?: DOMRect,
+): TerminalCellPosition {
   const canvas = terminal.renderer?.getCanvas();
-  const rect = (canvas ?? terminal.element)?.getBoundingClientRect();
+  const rect = canvasRect ?? (canvas ?? terminal.element)?.getBoundingClientRect();
   const metrics = terminal.renderer?.getMetrics();
   const cellWidth = metrics?.width ?? 9;
   const cellHeight = metrics?.height ?? 16;
@@ -1640,6 +1665,25 @@ function touchCellPosition(terminal: Terminal, clientX: number, clientY: number)
   return {
     col: clampInteger(Math.floor(relativeX / cellWidth), 0, terminal.cols - 1),
     row: clampInteger(Math.floor(relativeY / cellHeight), 0, terminal.rows - 1),
+  };
+}
+
+function terminalMouseReportPoint(terminal: Terminal, clientX: number, clientY: number) {
+  const canvas = terminal.renderer?.getCanvas();
+  const rect = canvas?.getBoundingClientRect();
+  const position = touchCellPosition(terminal, clientX, clientY, rect);
+  const relativeX = rect ? clientX - rect.left : clientX;
+  const relativeY = rect ? clientY - rect.top : clientY;
+  return {
+    ...position,
+    pixelX: clampInteger(Math.floor(relativeX), 0, Math.max(0, Math.ceil(rect?.width ?? 1) - 1)),
+    pixelY: clampInteger(Math.floor(relativeY), 0, Math.max(0, Math.ceil(rect?.height ?? 1) - 1)),
+    inside:
+      rect !== undefined &&
+      relativeX >= 0 &&
+      relativeX < rect.width &&
+      relativeY >= 0 &&
+      relativeY < rect.height,
   };
 }
 
