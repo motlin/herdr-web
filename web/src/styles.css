@@ -49,6 +49,11 @@
   --st-idle: var(--green);
   --st-unknown: var(--overlay0);
 
+  --sb-sep: var(--overlay0);
+  --sb-secondary: var(--overlay0);
+  --sb-cont-indent: 17px;
+  --sb-row-gap: 2px;
+
   --r-sm: 6px;
   --r-md: 9px;
   --r-lg: 13px;
@@ -983,6 +988,111 @@ button {
 
 .dot[data-status="working"] {
   animation: pulse 1.7s ease-out infinite;
+}
+
+.sb-rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sb-row-gap);
+}
+
+.sb-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.sb-row[data-row="0"] {
+  font-size: 13.5px;
+}
+
+.sb-row:not([data-row="0"]) {
+  padding-left: var(--sb-cont-indent);
+  font-size: 11px;
+}
+
+.sb-tok {
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-sep {
+  flex: 0 0 auto;
+  color: var(--sb-sep);
+  white-space: pre;
+}
+
+.sb-dot,
+.sb-git {
+  flex: 0 0 auto;
+}
+
+.sb-dot {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sb-row[data-row="0"] .sb-tok[data-token="workspace"] {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.sb-tok:is(
+    [data-token="tab"],
+    [data-token="pane"],
+    [data-token="agent"],
+    [data-token="branch"],
+    [data-token="custom"],
+    [data-token="terminal_title"]
+  ) {
+  color: var(--sb-secondary);
+}
+
+.sb-tok[data-token="state_text"] {
+  opacity: 0.72;
+}
+
+.space-row[data-active="true"] .sb-tok[data-token="branch"] {
+  color: var(--mauve);
+}
+
+.sb-dot[data-status="blocked"] {
+  color: var(--st-blocked);
+}
+
+.sb-dot[data-status="working"] {
+  color: var(--st-working);
+  animation: pulse 1.7s ease-out infinite;
+}
+
+.sb-dot[data-status="done"] {
+  color: var(--st-done);
+}
+
+.sb-dot[data-status="idle"] {
+  color: var(--st-idle);
+}
+
+.sb-dot[data-status="unknown"] {
+  color: var(--st-unknown);
+}
+
+.sb-dot[data-status="blocked"],
+.sb-dot[data-status="done"] {
+  text-shadow: 0 0 9px currentColor;
+}
+
+.sb-git .sb-ahead {
+  color: var(--green);
+}
+
+.sb-git .sb-behind {
+  color: var(--red);
 }
 
 .pane-word[data-status="blocked"] {
