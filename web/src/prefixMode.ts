@@ -4,6 +4,7 @@ export type PrefixModeState = "idle" | "pending";
 
 export type PrefixModeInput = {
   chord: KeyChord;
+  code: string;
   data: string;
 };
 
@@ -25,6 +26,8 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
   "AltGraph",
   "CapsLock",
 ]);
+
+const DIGIT_CODE_PATTERN = /^Digit(\d)$/u;
 
 const SECONDARY_PREFIX: KeyChord = {
   key: "b",
@@ -66,7 +69,7 @@ export function transitionPrefixMode<Action extends string>(
   }
 
   for (const [action, binding] of bindings) {
-    const index = matchingIndex(input.chord, binding);
+    const index = matchingIndex(input, binding);
     if (index !== null) {
       return {
         state: "idle",
@@ -81,18 +84,35 @@ export function transitionPrefixMode<Action extends string>(
   return { state: "idle", swallow: true, emission: null };
 }
 
-function matchingIndex(chord: KeyChord, binding: Binding): number | undefined | null {
+function matchingIndex(
+  input: PrefixModeInput,
+  binding: Binding,
+): number | undefined | null {
   if (!binding.prefix) {
     return null;
   }
   if (binding.type === "chord") {
-    return chordsMatch(chord, binding.chord) ? undefined : null;
+    return chordsMatch(input.chord, binding.chord) ? undefined : null;
   }
-  if (!modifiersMatch(chord, binding.modifiers) || !/^\d$/u.test(chord.key)) {
+  if (!modifiersMatch(input.chord, binding.modifiers)) {
     return null;
   }
-  const index = Number(chord.key);
+  const index = indexedDigit(input);
+  if (index === null) {
+    return null;
+  }
   return index >= binding.first && index <= binding.last ? index : null;
+}
+
+// Modified digits do not reach `key` as digits: macOS reports Option+1 as "\u00a1".
+// The physical `code` survives the modifier, so it drives indexed bindings, with
+// `key` as the fallback for sources that report no code (soft keyboards).
+function indexedDigit(input: PrefixModeInput) {
+  const code = DIGIT_CODE_PATTERN.exec(input.code);
+  if (code) {
+    return Number(code[1]);
+  }
+  return /^\d$/u.test(input.chord.key) ? Number(input.chord.key) : null;
 }
 
 function chordsMatch(left: KeyChord, right: KeyChord) {

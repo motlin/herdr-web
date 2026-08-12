@@ -6029,7 +6029,10 @@ function formatHerdrKeyChord(chord: KeyChord) {
 }
 
 export function prefixModeInputFromKeyboardEvent(
-  event: Pick<KeyboardEvent, "key" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey">,
+  event: Pick<
+    KeyboardEvent,
+    "key" | "code" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey"
+  >,
 ): PrefixModeInput {
   const chordKey = /^[A-Z]$/u.test(event.key) ? event.key.toLowerCase() : event.key;
   return {
@@ -6040,6 +6043,7 @@ export function prefixModeInputFromKeyboardEvent(
       alt: event.altKey,
       meta: event.metaKey,
     },
+    code: event.code,
     data: event.ctrlKey && event.key === "b" ? "\u0002" : event.key,
   };
 }

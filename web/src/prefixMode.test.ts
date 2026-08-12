@@ -85,8 +85,8 @@ const bindings = new Map<string, Binding>([
   ],
 ]);
 
-function input(chord: KeyChord, data = chord.key) {
-  return { chord, data };
+function input(chord: KeyChord, data = chord.key, code = "") {
+  return { chord, code, data };
 }
 
 describe("prefix mode", () => {
@@ -209,6 +209,31 @@ describe("prefix mode", () => {
       state: "idle",
       swallow: true,
       emission: { type: "action", action: "switch_tab", index: 3 },
+    });
+  });
+
+  it("emits an indexed action for a macOS Option+digit whose key is not a digit", () => {
+    expect(
+      transitionPrefixMode(
+        "pending",
+        input(
+          {
+            key: "\u00a1",
+            ctrl: false,
+            shift: false,
+            alt: true,
+            meta: false,
+          },
+          "\u00a1",
+          "Digit1",
+        ),
+        configuredPrefix,
+        bindings,
+      ),
+    ).toStrictEqual({
+      state: "idle",
+      swallow: true,
+      emission: { type: "action", action: "focus_agent", index: 1 },
     });
   });
 

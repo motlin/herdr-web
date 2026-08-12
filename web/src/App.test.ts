@@ -47,6 +47,8 @@ import {
 import type { BridgeConnectionRef, BridgeConnectionView } from "./App";
 import type { BridgeRuntime } from "./bridge";
 import { agentActivityKey } from "./agentActivity";
+import { parseHerdrKeysSource } from "./herdrKeys";
+import { transitionPrefixMode } from "./prefixMode";
 import {
   currentConnectionSnapshot,
   isConnectionResultCurrent,
@@ -1491,6 +1493,7 @@ describe("App multi-bridge helpers", () => {
   it("builds prefix input from a configured key and the ctrl+b terminal byte", () => {
     const backtick = prefixModeInputFromKeyboardEvent({
       key: "`",
+      code: "Backquote",
       ctrlKey: false,
       shiftKey: false,
       altKey: false,
@@ -1498,6 +1501,7 @@ describe("App multi-bridge helpers", () => {
     });
     const controlB = prefixModeInputFromKeyboardEvent({
       key: "b",
+      code: "KeyB",
       ctrlKey: true,
       shiftKey: false,
       altKey: false,
@@ -1505,6 +1509,7 @@ describe("App multi-bridge helpers", () => {
     });
     const shiftedX = prefixModeInputFromKeyboardEvent({
       key: "X",
+      code: "KeyX",
       ctrlKey: false,
       shiftKey: true,
       altKey: false,
@@ -1520,6 +1525,7 @@ describe("App multi-bridge helpers", () => {
           alt: false,
           meta: false,
         },
+        code: "Backquote",
         data: "`",
       },
       controlB: {
@@ -1530,6 +1536,7 @@ describe("App multi-bridge helpers", () => {
           alt: false,
           meta: false,
         },
+        code: "KeyB",
         data: "\u0002",
       },
       shiftedX: {
@@ -1540,8 +1547,43 @@ describe("App multi-bridge helpers", () => {
           alt: false,
           meta: false,
         },
+        code: "KeyX",
         data: "X",
       },
+    });
+  });
+
+  const { prefix: backtickPrefix, bindings: herdrBindings } = parseHerdrKeysSource(
+    'prefix = "backtick"\nfocus_agent = "prefix+alt+1..9"\n',
+  );
+
+  it("routes a macOS Option+1 keydown to focus_agent by its physical key code", () => {
+    const optionOne = prefixModeInputFromKeyboardEvent({
+      key: "\u00a1",
+      code: "Digit1",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: true,
+      metaKey: false,
+    });
+
+    expect(optionOne).toStrictEqual({
+      chord: {
+        key: "\u00a1",
+        ctrl: false,
+        shift: false,
+        alt: true,
+        meta: false,
+      },
+      code: "Digit1",
+      data: "\u00a1",
+    });
+    expect(
+      transitionPrefixMode("pending", optionOne, backtickPrefix, herdrBindings),
+    ).toStrictEqual({
+      state: "idle",
+      swallow: true,
+      emission: { type: "action", action: "focus_agent", index: 1 },
     });
   });
 
