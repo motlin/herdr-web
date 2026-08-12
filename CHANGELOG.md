@@ -74,6 +74,9 @@
   [PR #57](https://github.com/kcosr/herdr-web/pull/57), based on work proposed by
   [Hopkins (@LosEcher)](https://github.com/LosEcher) in
   [PR #51](https://github.com/kcosr/herdr-web/pull/51).
+- Space and agent sidebar rows now follow Herdr's TUI `[ui.sidebar]` token configuration, show
+  workspace Git branches and ahead/behind counts, and keep host labels in tooltips and group
+  headers instead of row bodies.
 - Terminal apps using normal, button, or any-event mouse tracking now receive wheel reports instead
   of accidental arrow-key input; hold Shift while scrolling to move through local scrollback.
 - The Ghostty palette field now accepts a complete config and applies its font, size, and supported
