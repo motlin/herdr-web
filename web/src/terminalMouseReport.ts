@@ -1,6 +1,6 @@
 import type { TerminalMouseMode } from "./terminalMouseMode";
 
-export const LEGACY_MOUSE_COORDINATE_LIMIT = 95;
+export const LEGACY_MOUSE_COORDINATE_LIMIT = 223;
 export const UTF8_MOUSE_COORDINATE_LIMIT = 2015;
 
 export type TerminalMouseButton = "left" | "middle" | "right";

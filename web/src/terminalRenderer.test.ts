@@ -409,12 +409,14 @@ describe("GhosttyRenderer", () => {
     });
   });
 
-  it("forwards only a legacy press under X10 tracking", async () => {
+  it("forwards only a legacy press as raw bytes under X10 tracking", async () => {
     ghosttyMocks.lineText = " ".repeat(80);
     ghosttyMocks.modes.add(9);
     const container = document.createElement("div");
     const renderer = new GhosttyRenderer();
     await renderer.mount(container);
+    const inputBytes = vi.fn();
+    renderer.onInputBytes(inputBytes);
     const press = new MouseEvent("mousedown", {
       bubbles: true,
       button: 0,
@@ -435,12 +437,14 @@ describe("GhosttyRenderer", () => {
     renderer.dispose();
 
     expect({
+      inputByteCalls: inputBytes.mock.calls,
       inputCalls: ghosttyMocks.input.mock.calls,
       mouseTracking: ghosttyMocks.mouseTracking,
       pressDefaultPrevented: press.defaultPrevented,
       releaseDefaultPrevented: release.defaultPrevented,
     }).toStrictEqual({
-      inputCalls: [["\x1b[M !!", true]],
+      inputByteCalls: [[new Uint8Array([27, 91, 77, 32, 33, 33])]],
+      inputCalls: [],
       mouseTracking: false,
       pressDefaultPrevented: true,
       releaseDefaultPrevented: true,

@@ -77,24 +77,24 @@ describe("terminal mouse report", () => {
     });
   });
 
-  it("suppresses legacy reports at the UTF-8 transport boundary", () => {
+  it("encodes legacy coordinates through their protocol limit", () => {
     expect({
       limit: LEGACY_MOUSE_COORDINATE_LIMIT,
       lastEncodable: encode(
-        { col: 94, row: 94 },
+        { col: 222, row: 222 },
         { encoding: "legacy" },
       ),
       firstSuppressed: encode(
-        { col: 95, row: 94 },
+        { col: 223, row: 222 },
         { encoding: "legacy" },
       ),
       rowSuppressed: encode(
-        { col: 94, row: 95 },
+        { col: 222, row: 223 },
         { encoding: "legacy" },
       ),
     }).toStrictEqual({
-      limit: 95,
-      lastEncodable: "\x1b[M\x20\x7f\x7f",
+      limit: 223,
+      lastEncodable: "\x1b[M\x20\xff\xff",
       firstSuppressed: null,
       rowSuppressed: null,
     });

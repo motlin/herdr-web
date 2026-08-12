@@ -73,6 +73,14 @@ const TOUCH_ENDPOINT_RING_DIAMETER_PX = 42;
 const TERMINAL_ACCESSIBLE_SCREEN_DEBOUNCE_MS = 160;
 const TAP_URL_PATTERN = /\bhttps?:\/\/[^\s"'<>`]+/giu;
 
+function latin1Bytes(data: string): Uint8Array {
+  const bytes = new Uint8Array(data.length);
+  for (let index = 0; index < data.length; index += 1) {
+    bytes[index] = data.charCodeAt(index);
+  }
+  return bytes;
+}
+
 type GhosttyModule = typeof import("ghostty-web");
 
 let ghosttyModule: Promise<GhosttyModule> | null = null;
@@ -138,6 +146,7 @@ export type TerminalRenderer = {
   write(data: string | Uint8Array): void;
   setAccessibleScreenListener(callback: ((text: string) => void) | null): void;
   onInput(callback: (data: string) => void): () => void;
+  onInputBytes(callback: (data: Uint8Array) => void): () => void;
   onScroll(callback: (lines: number) => void): () => void;
   setTapFocusHandler(callback: (() => TerminalTapFocusResult) | null): void;
   setMobileTouchSelection(
@@ -163,6 +172,7 @@ export class GhosttyRenderer implements TerminalRenderer {
   #container: HTMLElement | null = null;
   #scrollSensitivity = 1;
   #scrollCallback: ((lines: number) => void) | null = null;
+  #inputBytesCallback: ((data: Uint8Array) => void) | null = null;
   #touchCleanup: (() => void) | null = null;
   #mobileInputCleanup: (() => void) | null = null;
   #imeFocusCleanup: (() => void) | null = null;
@@ -265,6 +275,15 @@ export class GhosttyRenderer implements TerminalRenderer {
   onInput(callback: (data: string) => void) {
     const disposable = this.#requireTerminal().onData(callback);
     return () => disposable.dispose();
+  }
+
+  onInputBytes(callback: (data: Uint8Array) => void) {
+    this.#inputBytesCallback = callback;
+    return () => {
+      if (this.#inputBytesCallback === callback) {
+        this.#inputBytesCallback = null;
+      }
+    };
   }
 
   onScroll(callback: (lines: number) => void) {
@@ -466,7 +485,13 @@ export class GhosttyRenderer implements TerminalRenderer {
     }
   }
 
-  #writeTerminalInput(terminal: Terminal, data: string) {
+  #writeTerminalInput(terminal: Terminal, data: string, mode: TerminalMouseMode) {
+    if (mode.encoding === "legacy") {
+      if (this.#isCurrentTerminal(terminal)) {
+        this.#inputBytesCallback?.(latin1Bytes(data));
+      }
+      return;
+    }
     try {
       terminal.input(data, true);
     } catch {
@@ -510,7 +535,7 @@ export class GhosttyRenderer implements TerminalRenderer {
             5,
           );
           for (let index = 0; index < reportCount; index += 1) {
-            this.#writeTerminalInput(terminal, report);
+            this.#writeTerminalInput(terminal, report, mode);
           }
         }
         return true;
@@ -1225,6 +1250,7 @@ export class GhosttyRenderer implements TerminalRenderer {
         return;
       }
       const point = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
+      const mode = this.#terminalMouseMode(terminal);
       const report = encodeTerminalMouseReport(
         {
           kind,
@@ -1238,10 +1264,10 @@ export class GhosttyRenderer implements TerminalRenderer {
           alt: event.altKey,
           ctrl: event.ctrlKey,
         },
-        this.#terminalMouseMode(terminal),
+        mode,
       );
       if (report) {
-        this.#writeTerminalInput(terminal, report);
+        this.#writeTerminalInput(terminal, report, mode);
       }
     };
     const resetMotionTracking = () => {
@@ -1256,7 +1282,7 @@ export class GhosttyRenderer implements TerminalRenderer {
     const emitMotionReport = (descriptor: TerminalMouseEvent, mode: TerminalMouseMode) => {
       const report = encodeTerminalMouseReport(descriptor, mode);
       if (report) {
-        this.#writeTerminalInput(terminal, report);
+        this.#writeTerminalInput(terminal, report, mode);
       }
     };
     const endMouseDragSession = () => {
@@ -1332,7 +1358,7 @@ export class GhosttyRenderer implements TerminalRenderer {
         if (!button || !report) {
           return;
         }
-        this.#writeTerminalInput(terminal, report);
+        this.#writeTerminalInput(terminal, report, mode);
         suppressTerminalMouseEvent(event);
         if (!redirectTapFocus(event)) {
           terminal.focus();

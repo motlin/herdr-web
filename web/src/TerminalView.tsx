@@ -454,6 +454,18 @@ export function TerminalView({
     [flushBatchedTerminalInput, scheduleBatchedTerminalInputFlush, sendTerminalInputFrame],
   );
 
+  const sendTerminalInputBytes = useCallback(
+    (bytes: Uint8Array) => {
+      const socket = socketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      flushBatchedTerminalInput();
+      socket.send(bytes);
+    },
+    [flushBatchedTerminalInput],
+  );
+
   useEffect(() => {
     if (terminalInputBatchDelayMs <= 0) {
       flushBatchedTerminalInput();
@@ -505,6 +517,7 @@ export function TerminalView({
     host.replaceChildren();
     let disposed = false;
     let disposeInput: (() => void) | null = null;
+    let disposeInputBytes: (() => void) | null = null;
     let disposeScroll: (() => void) | null = null;
     let resizeObserver: ResizeObserver | null = null;
     const generation = rendererGenerationRef.current + 1;
@@ -558,6 +571,9 @@ export function TerminalView({
         disposeInput = renderer.onInput((data) => {
           sendTerminalInputData(data);
         });
+        disposeInputBytes = renderer.onInputBytes((bytes) => {
+          sendTerminalInputBytes(bytes);
+        });
         disposeScroll = renderer.onScroll((lines) => {
           const socket = socketRef.current;
           if (socket?.readyState !== WebSocket.OPEN || lines === 0) {
@@ -605,6 +621,7 @@ export function TerminalView({
       batchedInputRef.current = emptyTerminalInputBatch();
       clearQueuedTerminalInput();
       disposeInput?.();
+      disposeInputBytes?.();
       disposeScroll?.();
       resizeObserver?.disconnect();
       if (rendererReadyRef.current?.generation === generation) {
@@ -627,6 +644,7 @@ export function TerminalView({
     handleMobileTerminalTouch,
     measureTerminal,
     pane?.terminal_id,
+    sendTerminalInputBytes,
     sendTerminalInputData,
   ]);
 
