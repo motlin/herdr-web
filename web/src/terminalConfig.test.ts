@@ -1,3 +1,4 @@
+import { createCanvas } from "canvas";
 import { describe, expect, it } from "vitest";
 import {
   parseGhosttyConfigResponse,
@@ -31,7 +32,7 @@ describe("Ghostty config import", () => {
   it("extracts appearance settings from a complete Ghostty config", () => {
     expect(
       terminalAppearanceFromGhosttySource(`
-        font-family = Example Mono
+        font-family = 'Example Mono'
         font-size = 16
         background = #000000
         selection-background = #b5d5ff
@@ -40,10 +41,25 @@ describe("Ghostty config import", () => {
         keybind = shift+enter=text:\\n
       `),
     ).toStrictEqual({
-      fontFamily: "Example Mono, monospace",
+      fontFamily: "'Example Mono', monospace",
       fontSizePx: 16,
       themeSource:
         "background = #000000\nselection-background = #b5d5ff\npalette = 0=#010203",
+    });
+  });
+
+  it("quotes imported font family names for canvas font syntax", () => {
+    const context = createCanvas(1, 1).getContext("2d");
+    const appearance = terminalAppearanceFromGhosttySource(
+      "font-family = 3270 Nerd Font",
+    );
+    const font = `16px ${appearance.fontFamily}`;
+
+    context.font = font;
+
+    expect({ appearance, canvasFont: context.font }).toStrictEqual({
+      appearance: { fontFamily: '"3270 Nerd Font", monospace' },
+      canvasFont: '16px "3270 Nerd Font", monospace',
     });
   });
 
@@ -54,7 +70,7 @@ describe("Ghostty config import", () => {
         cursor-color = white
       `),
     ).toStrictEqual({
-      fontFamily: "Example Mono, monospace",
+      fontFamily: '"Example Mono", monospace',
     });
   });
 

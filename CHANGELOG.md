@@ -86,6 +86,8 @@
 - Fixed terminal palette changes not repainting terminals that are already mounted.
 - Fixed Ghostty appearance imports with unsupported color formats discarding valid font settings.
 - Fixed Ghostty appearance imports accepting font and color values that could not be persisted.
+- Fixed Ghostty appearance imports producing invalid CSS for font family names that require
+  quotes.
 - Fixed partial Ghostty theme imports falling back to unreadable built-in colors instead of the
   app's default palette.
 - Fixed Escape in terminal appearance text fields closing the entire settings dialog.

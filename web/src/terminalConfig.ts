@@ -66,10 +66,13 @@ export function terminalAppearanceFromGhosttySource(source: string): TerminalApp
       continue;
     }
     const key = line.slice(0, separatorIndex).trim();
-    const value = unquote(line.slice(separatorIndex + 1).trim());
+    const rawValue = line.slice(separatorIndex + 1).trim();
     if (key === "font-family") {
-      fontFamilies.push(parseImportedTerminalFontFamily(value));
+      fontFamilies.push(
+        parseImportedTerminalFontFamily(quoteFontFamily(rawValue)),
+      );
     } else if (key === "font-size") {
+      const value = unquote(rawValue);
       const parsed = Number(value);
       if (!Number.isFinite(parsed) || parsed <= 0) {
         throw new Error("Ghostty config contains an invalid font-size");
@@ -113,15 +116,26 @@ function parseImportedTerminalFontFamily(value: string) {
   return fontFamily;
 }
 
+function quoteFontFamily(value: string) {
+  if (isQuoted(value)) {
+    return value;
+  }
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 function unquote(value: string) {
-  if (
-    value.length >= 2 &&
-    ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'")))
-  ) {
+  if (isQuoted(value)) {
     return value.slice(1, -1);
   }
   return value;
+}
+
+function isQuoted(value: string) {
+  return (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
