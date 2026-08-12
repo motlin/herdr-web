@@ -323,6 +323,7 @@ describe("capabilities", () => {
         agent_activity: { version: 1 },
         agent_pins: { version: 1 },
         ghostty_config: { version: 1 },
+        herdr_keys: { version: 1 },
         notes: { version: 1 },
       }),
     ).toStrictEqual({
@@ -333,6 +334,7 @@ describe("capabilities", () => {
       agent_activity: { version: 1 },
       agent_pins: { version: 1 },
       ghostty_config: { version: 1 },
+      herdr_keys: { version: 1 },
       launcher_presets: undefined,
       notes: { version: 1 },
     });

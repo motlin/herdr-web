@@ -45,6 +45,9 @@ export type BridgeCapabilities = {
   ghostty_config?: {
     version: 1;
   };
+  herdr_keys?: {
+    version: 1;
+  };
   notes?: {
     version: 1;
   };
@@ -1083,6 +1086,10 @@ export function parseCapabilities(value: unknown): BridgeCapabilities {
         : undefined,
     ghostty_config:
       isRecord(value.ghostty_config) && value.ghostty_config.version === 1
+        ? { version: 1 }
+        : undefined,
+    herdr_keys:
+      isRecord(value.herdr_keys) && value.herdr_keys.version === 1
         ? { version: 1 }
         : undefined,
     notes:
