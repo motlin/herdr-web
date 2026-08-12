@@ -66,6 +66,8 @@
   [PR #57](https://github.com/kcosr/herdr-web/pull/57), based on work proposed by
   [Hopkins (@LosEcher)](https://github.com/LosEcher) in
   [PR #51](https://github.com/kcosr/herdr-web/pull/51).
+- Terminal apps using normal, button, or any-event mouse tracking now receive wheel reports instead
+  of accidental arrow-key input; hold Shift while scrolling to move through local scrollback.
 - The Ghostty palette field now accepts a complete config and applies its font, size, and supported
   colors together.
 - Split the Space-scoped sidebar into independently scrolling Spaces and content panes with sticky

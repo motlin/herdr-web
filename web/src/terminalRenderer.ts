@@ -19,6 +19,7 @@ import {
 import {
   encodeTerminalMouseReport,
   terminalMouseButtonFromDomButton,
+  terminalMouseWheelFromDelta,
 } from "./terminalMouseReport";
 import type { TerminalMouseEvent } from "./terminalMouseReport";
 import {
@@ -477,7 +478,44 @@ export class GhosttyRenderer implements TerminalRenderer {
     const terminal = this.#requireTerminal();
 
     terminal.attachCustomWheelEventHandler((event) => {
-      if (!this.#isCurrentTerminal(terminal) || this.#hasMouseTracking(terminal)) {
+      if (!this.#isCurrentTerminal(terminal)) {
+        return false;
+      }
+      const mode = this.#terminalMouseMode(terminal);
+      if (
+        mode.tracking !== "off" &&
+        mode.tracking !== "x10" &&
+        !event.shiftKey
+      ) {
+        const point = terminalMouseReportPoint(terminal, event.clientX, event.clientY);
+        const report = encodeTerminalMouseReport(
+          {
+            kind: "wheel",
+            button: null,
+            wheel: terminalMouseWheelFromDelta(event.deltaX, event.deltaY),
+            col: point.col,
+            row: point.row,
+            pixelX: point.pixelX,
+            pixelY: point.pixelY,
+            shift: event.shiftKey,
+            alt: event.altKey,
+            ctrl: event.ctrlKey,
+          },
+          mode,
+        );
+        if (report) {
+          const reportCount = clampInteger(
+            Math.abs(normalizeWheelLines(event, terminal.rows, this.#scrollSensitivity)),
+            1,
+            5,
+          );
+          for (let index = 0; index < reportCount; index += 1) {
+            this.#writeTerminalInput(terminal, report);
+          }
+        }
+        return true;
+      }
+      if (mode.tracking === "off" && this.#hasMouseTracking(terminal)) {
         return false;
       }
       event.preventDefault();

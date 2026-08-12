@@ -15,6 +15,7 @@ const ghosttyMocks = vi.hoisted(() => ({
   setTheme: vi.fn(),
   terminals: [] as object[],
   wasmTerminal: {},
+  wheelHandler: null as ((event: WheelEvent) => boolean) | null,
 }));
 
 vi.mock("ghostty-web", () => ({
@@ -67,7 +68,9 @@ vi.mock("ghostty-web", () => ({
     }
 
     attachCustomKeyEventHandler() {}
-    attachCustomWheelEventHandler() {}
+    attachCustomWheelEventHandler(handler: (event: WheelEvent) => boolean) {
+      ghosttyMocks.wheelHandler = handler;
+    }
     clearSelection() {}
     dispose() {}
     focus() {
@@ -102,6 +105,7 @@ beforeEach(() => {
   ghosttyMocks.render.mockClear();
   ghosttyMocks.setTheme.mockClear();
   ghosttyMocks.terminals.length = 0;
+  ghosttyMocks.wheelHandler = null;
 });
 
 describe("GhosttyRenderer", () => {
@@ -311,6 +315,84 @@ describe("GhosttyRenderer", () => {
       ],
       pressDefaultPrevented: true,
       releaseDefaultPrevented: true,
+    });
+  });
+
+  it("emits vertical wheel reports instead of scrolling during mouse tracking", async () => {
+    ghosttyMocks.mouseTracking = true;
+    ghosttyMocks.modes.add(1000);
+    ghosttyMocks.modes.add(1006);
+    const renderer = new GhosttyRenderer();
+    const onScroll = vi.fn();
+    renderer.onScroll(onScroll);
+    await renderer.mount(document.createElement("div"));
+
+    const upHandled = ghosttyMocks.wheelHandler?.(
+      new WheelEvent("wheel", { deltaY: -16 }),
+    );
+    const downHandled = ghosttyMocks.wheelHandler?.(
+      new WheelEvent("wheel", { deltaY: 16 }),
+    );
+
+    expect({
+      downHandled,
+      inputCalls: ghosttyMocks.input.mock.calls,
+      scrollCalls: onScroll.mock.calls,
+      upHandled,
+    }).toStrictEqual({
+      downHandled: true,
+      inputCalls: [
+        ["\x1b[<64;1;1M", true],
+        ["\x1b[<65;1;1M", true],
+      ],
+      scrollCalls: [],
+      upHandled: true,
+    });
+  });
+
+  it("uses local scrollback for Shift-wheel during mouse tracking", async () => {
+    ghosttyMocks.mouseTracking = true;
+    ghosttyMocks.modes.add(1002);
+    ghosttyMocks.modes.add(1006);
+    const renderer = new GhosttyRenderer();
+    const onScroll = vi.fn();
+    renderer.onScroll(onScroll);
+    await renderer.mount(document.createElement("div"));
+
+    const handled = ghosttyMocks.wheelHandler?.(
+      new WheelEvent("wheel", { deltaY: 16, shiftKey: true }),
+    );
+
+    expect({
+      handled,
+      inputCalls: ghosttyMocks.input.mock.calls,
+      scrollCalls: onScroll.mock.calls,
+    }).toStrictEqual({
+      handled: true,
+      inputCalls: [],
+      scrollCalls: [[1]],
+    });
+  });
+
+  it("uses local scrollback for wheel events under X10 tracking", async () => {
+    ghosttyMocks.modes.add(9);
+    const renderer = new GhosttyRenderer();
+    const onScroll = vi.fn();
+    renderer.onScroll(onScroll);
+    await renderer.mount(document.createElement("div"));
+
+    const handled = ghosttyMocks.wheelHandler?.(
+      new WheelEvent("wheel", { deltaY: -16 }),
+    );
+
+    expect({
+      handled,
+      inputCalls: ghosttyMocks.input.mock.calls,
+      scrollCalls: onScroll.mock.calls,
+    }).toStrictEqual({
+      handled: true,
+      inputCalls: [],
+      scrollCalls: [[-1]],
     });
   });
 });
