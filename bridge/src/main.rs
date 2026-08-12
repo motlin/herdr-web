@@ -1,5 +1,6 @@
 mod agent_activity;
 mod agent_pins;
+mod git_status;
 mod launcher_presets;
 mod notes;
 mod session;

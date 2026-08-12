@@ -21,7 +21,7 @@ pub(crate) fn derive_label_from_cwd(cwd: &Path) -> String {
         .unwrap_or_else(|| cwd.display().to_string())
 }
 
-fn git_repo_root(start: &Path) -> Option<PathBuf> {
+pub(crate) fn git_repo_root(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_dir() {
         start.to_path_buf()
     } else {
@@ -42,7 +42,7 @@ fn git_repo_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
-fn git_dir_for_repo_root(repo_root: &Path) -> Option<PathBuf> {
+pub(crate) fn git_dir_for_repo_root(repo_root: &Path) -> Option<PathBuf> {
     let git_path = repo_root.join(".git");
     if git_path.is_dir() {
         return Some(git_path);
@@ -66,6 +66,18 @@ fn git_dir_for_repo_root(repo_root: &Path) -> Option<PathBuf> {
     None
 }
 
+pub(crate) fn git_common_dir_for_git_dir(git_dir: &Path) -> PathBuf {
+    let Ok(contents) = std::fs::read_to_string(git_dir.join("commondir")) else {
+        return git_dir.to_path_buf();
+    };
+    let common_dir = Path::new(contents.trim());
+    if common_dir.is_absolute() {
+        common_dir.to_path_buf()
+    } else {
+        git_dir.join(common_dir)
+    }
+}
+
 fn path_is_git_dir_layout(path: &Path) -> bool {
     path.join("HEAD").is_file() && path.join("objects").is_dir() && path.join("refs").is_dir()
 }
@@ -84,25 +96,24 @@ fn git_dir_is_bare(git_dir: &Path) -> bool {
 }
 
 #[cfg(test)]
+pub(crate) fn temp_test_dir(name: &str) -> PathBuf {
+    let unique = format!(
+        "herdr-web-bridge-workspace-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let path = std::env::temp_dir().join(unique);
+    std::fs::create_dir_all(&path).unwrap();
+    path
+}
+
+#[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
-
-    fn temp_test_dir(name: &str) -> PathBuf {
-        let unique = format!(
-            "herdr-web-bridge-workspace-{name}-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        );
-        let path = std::env::temp_dir().join(unique);
-        std::fs::create_dir_all(&path).unwrap();
-        path
-    }
 
     #[test]
     fn derive_label_uses_repo_root_for_nested_cwd() {
