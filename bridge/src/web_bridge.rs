@@ -3165,13 +3165,9 @@ fn herdr_keys_source_if_present(source: &str) -> Option<String> {
     let mut in_keys_section = false;
     let mut key_lines = Vec::new();
     for raw_line in source.lines() {
-        let line = raw_line.trim();
+        let line = strip_config_comment(raw_line).trim();
         if line.starts_with('[') {
-            let section_header = line
-                .split_once('#')
-                .map_or(line, |(header, _)| header)
-                .trim();
-            in_keys_section = section_header == "[keys]";
+            in_keys_section = line == "[keys]";
             continue;
         }
         if !in_keys_section {
@@ -3180,11 +3176,42 @@ fn herdr_keys_source_if_present(source: &str) -> Option<String> {
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        if herdr_keys_key(key.trim()) && is_quoted_config_value(value.trim()) {
-            key_lines.push(line);
+        let key = key.trim();
+        if !herdr_keys_key(key) {
+            continue;
         }
+        let Some(value) = quoted_config_value(value.trim()) else {
+            continue;
+        };
+        key_lines.push(format!("{key} = {value}"));
     }
     (!key_lines.is_empty()).then(|| key_lines.join("\n"))
+}
+
+/// Truncates a config line at its trailing `#` comment, ignoring any `#` that
+/// sits inside a basic (`"`) or literal (`'`) string.
+fn strip_config_comment(line: &str) -> &str {
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    for (index, byte) in line.bytes().enumerate() {
+        match quote {
+            Some(delimiter) => {
+                if escaped {
+                    escaped = false;
+                } else if delimiter == b'"' && byte == b'\\' {
+                    escaped = true;
+                } else if byte == delimiter {
+                    quote = None;
+                }
+            }
+            None => match byte {
+                b'#' => return &line[..index],
+                b'"' | b'\'' => quote = Some(byte),
+                _ => {}
+            },
+        }
+    }
+    line
 }
 
 fn herdr_keys_key(key: &str) -> bool {
@@ -3201,8 +3228,19 @@ fn herdr_keys_key(key: &str) -> bool {
     )
 }
 
-fn is_quoted_config_value(value: &str) -> bool {
-    value.len() >= 2 && value.starts_with('"') && value.ends_with('"')
+/// Normalizes a quoted TOML scalar to a double-quoted value the web client can
+/// parse as JSON, converting literal (`'`) strings and rejecting anything else.
+fn quoted_config_value(value: &str) -> Option<String> {
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        return Some(value.to_string());
+    }
+    let literal = value
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))?;
+    Some(format!(
+        "\"{}\"",
+        literal.replace('\\', "\\\\").replace('"', "\\\"")
+    ))
 }
 
 async fn agent_activity_list_handler(
@@ -4939,16 +4977,16 @@ mod tests {
     #[test]
     fn herdr_keys_import_exposes_only_allow_listed_key_scalars() {
         let source = herdr_keys_source_if_present(
-            r#"
-                [keys]
-                prefix = "backtick"
-                new_tab = "prefix+c"
-                next_tab = "prefix+n"
-                previous_tab = "prefix+p"
+            r##"
+                [keys] # prefix-mode bindings
+                prefix = "backtick" # my prefix
+                new_tab = 'prefix+c'
+                next_tab = "prefix+n"# no space before the comment
+                previous_tab = 'prefix+p' # a literal string plus a comment
                 switch_tab = "prefix+1..9"
                 close_tab = "prefix+shift+x"
                 close_pane = "prefix+x"
-                focus_agent = "prefix+alt+1..9"
+                focus_agent = "prefix+alt+1..9" # see "docs"
                 detach = "prefix+q"
 
                 [ui]
@@ -4959,7 +4997,7 @@ mod tests {
                 key = "prefix+g"
                 command = "example-command"
                 focus_agent = "nested-secret"
-            "#,
+            "##,
         )
         .expect("Herdr key settings should parse");
 
@@ -4967,6 +5005,37 @@ mod tests {
             source,
             "prefix = \"backtick\"\nnew_tab = \"prefix+c\"\nnext_tab = \"prefix+n\"\nprevious_tab = \"prefix+p\"\nswitch_tab = \"prefix+1..9\"\nclose_tab = \"prefix+shift+x\"\nclose_pane = \"prefix+x\"\nfocus_agent = \"prefix+alt+1..9\""
         );
+    }
+
+    #[test]
+    fn herdr_keys_import_keeps_hash_characters_inside_quoted_values() {
+        let source = herdr_keys_source_if_present(
+            r##"
+                [keys]
+                prefix = "ctrl+#" # a hash prefix
+                new_tab = 'prefix+#' # a literal hash binding
+            "##,
+        )
+        .expect("Herdr key settings should parse");
+
+        assert_eq!(source, "prefix = \"ctrl+#\"\nnew_tab = \"prefix+#\"");
+    }
+
+    #[test]
+    fn herdr_keys_import_escapes_single_quoted_values() {
+        let source =
+            herdr_keys_source_if_present("[keys]\nprefix = 'ctrl+\\'\nnew_tab = 'prefix+\"'\n")
+                .expect("Herdr key settings should parse");
+
+        assert_eq!(source, "prefix = \"ctrl+\\\\\"\nnew_tab = \"prefix+\\\"\"");
+    }
+
+    #[test]
+    fn herdr_keys_import_ignores_unterminated_values() {
+        let result =
+            herdr_keys_source_if_present("[keys]\nprefix = \"backtick\nnew_tab = 'prefix+c\n");
+
+        assert_eq!(result, None);
     }
 
     #[test]
