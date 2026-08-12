@@ -22,6 +22,8 @@ Rust crate containing copied or lightly pruned compatibility code needed by `her
 - `bridge/src/web_bridge.rs` owns the HTTP/WebSocket bridge implementation and browser command
   allow-list.
 - `bridge/src/workspace.rs` owns web-specific workspace label derivation.
+- `bridge/src/git_status.rs` and `bridge/src/sidebar_config.rs` own web-specific Git status and
+  sidebar configuration behavior.
 
 The full upstream Herdr source tree is intentionally not vendored. Do not recreate `vendor/herdr/`
 or path-import files from an upstream checkout at build time.

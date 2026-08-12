@@ -46,6 +46,7 @@ use herdr_compat::protocol::{
 
 use crate::agent_activity::{AgentActivityListResponse, AgentActivityManager};
 use crate::agent_pins::{AgentPinsError, AgentPinsListResponse, AgentPinsManager};
+use crate::git_status::{GitStatusManager, WorkspaceGitStatus, GIT_STATUS_REFRESH_INTERVAL};
 use crate::launcher_presets::{
     layout_leaf_for_preset, split_layout_with_command_preset, CustomCommandPreset,
     LauncherPresetLaunch, LauncherPresetStore, ManagedAgentKind, ResolvedLauncherPreset,
@@ -112,6 +113,7 @@ struct BridgeState {
     terminal_sessions: Arc<Mutex<TerminalSessions>>,
     selected_pane_id: Arc<Mutex<Option<String>>>,
     agent_activity: Arc<AgentActivityManager>,
+    git_status: Arc<GitStatusManager>,
     agent_pins: Arc<AgentPinsManager>,
     launcher_presets: Arc<LauncherPresetStore>,
     notes: Arc<NotesManager>,
@@ -143,6 +145,8 @@ struct SnapshotWorkspaceInfo {
     #[serde(flatten)]
     info: WorkspaceInfo,
     can_clear_name: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    git: Option<WorkspaceGitStatus>,
 }
 
 #[derive(Debug, Serialize)]
@@ -976,6 +980,7 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
     }
     ensure_upload_dir(&options.upload_dir)?;
     let agent_activity = Arc::new(AgentActivityManager::new());
+    let git_status = Arc::new(GitStatusManager::new());
     let agent_pins = Arc::new(AgentPinsManager::new()?);
     let launcher_presets = Arc::new(
         LauncherPresetStore::load(options.launcher_presets_path.clone())
@@ -1010,6 +1015,7 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
         terminal_sessions: Arc::new(Mutex::new(TerminalSessions::default())),
         selected_pane_id: Arc::new(Mutex::new(None)),
         agent_activity,
+        git_status,
         agent_pins,
         launcher_presets,
         notes,
@@ -1018,6 +1024,7 @@ async fn run_server(options: BridgeOptions) -> io::Result<()> {
         upload_dir: options.upload_dir.clone(),
     };
     spawn_agent_activity_watcher(state.clone());
+    spawn_git_status_watcher(state.clone());
     let agent_activity_routes = Router::new().route(
         "/api/agent-activity",
         get(agent_activity_list_handler).options(preflight_handler),
@@ -2886,16 +2893,27 @@ async fn snapshot_handler(
         Err(err) => warn!(error = %err, "failed to update pane note observations"),
     }
     let selected_pane_id = shared_selected_pane(&state, &session_snapshot.panes)?;
+    let git_statuses = observe_snapshot_git_statuses(&state.git_status, &session_snapshot);
 
     Ok(Json(web_snapshot_from_session_snapshot(
         session_snapshot,
         selected_pane_id,
+        &git_statuses,
     )))
+}
+
+fn observe_snapshot_git_statuses(
+    git_status: &GitStatusManager,
+    snapshot: &SessionSnapshot,
+) -> HashMap<String, WorkspaceGitStatus> {
+    git_status.observe_snapshot(&snapshot.workspaces, &snapshot.panes);
+    git_status.statuses()
 }
 
 fn web_snapshot_from_session_snapshot(
     snapshot: SessionSnapshot,
     selected_pane_id: Option<String>,
+    git_statuses: &HashMap<String, WorkspaceGitStatus>,
 ) -> Snapshot {
     let SessionSnapshot {
         focused_pane_id,
@@ -2916,9 +2934,11 @@ fn web_snapshot_from_session_snapshot(
         .map(|workspace| {
             let can_clear_name = workspace.label
                 != default_workspace_label_from_panes(&workspace.workspace_id, panes.iter());
+            let git = git_statuses.get(&workspace.workspace_id).cloned();
             SnapshotWorkspaceInfo {
                 info: workspace,
                 can_clear_name,
+                git,
             }
         })
         .collect();
@@ -2987,7 +3007,11 @@ async fn sidebar_config_handler(
     let loaded = tokio::task::spawn_blocking(crate::sidebar_config::load_sidebar_config)
         .await
         .map_err(|error| BridgeError::Protocol(error.to_string()))?;
-    Ok(Json(sidebar_config_response(loaded)))
+    let response = sidebar_config_response(loaded);
+    state
+        .git_status
+        .set_demand(crate::sidebar_config::git_refresh_demand(&response.sidebar));
+    Ok(Json(response))
 }
 
 fn sidebar_config_response(
@@ -4129,6 +4153,23 @@ fn spawn_agent_activity_watcher(state: BridgeState) {
     }
 }
 
+fn spawn_git_status_watcher(state: BridgeState) {
+    if let Err(error) = thread::Builder::new()
+        .name("herdr-web-git-status".to_string())
+        .spawn(move || loop {
+            thread::sleep(GIT_STATUS_REFRESH_INTERVAL);
+            if state.git_status.refresh_once(std::time::Instant::now()) {
+                let payload = serde_json::json!({
+                    "type": "herdr_web.git_status_changed",
+                });
+                let _ = state.ui_event_tx.send(payload.to_string());
+            }
+        })
+    {
+        warn!(error = %error, "failed to start herdr-web git status watcher");
+    }
+}
+
 fn agent_activity_structural_watcher_loop(state: BridgeState, resubscribe_tx: mpsc::Sender<()>) {
     let mut backoff = ACTIVITY_WATCHER_INITIAL_BACKOFF;
     loop {
@@ -4739,7 +4780,44 @@ fn startup_daemon_error(err: BridgeError) -> io::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::git_status::{GitCommandRunner, GitStatusManager, WorkspaceGitStatus};
+
     use super::*;
+
+    #[derive(Debug, Default)]
+    struct FakeGitRunner {
+        calls: AtomicUsize,
+    }
+
+    impl FakeGitRunner {
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl GitCommandRunner for FakeGitRunner {
+        fn symbolic_head_full(&self, _repo_root: &Path) -> Option<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+
+        fn rev_parse_verify(&self, _repo_root: &Path, _revision: &str) -> Option<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+
+        fn ahead_behind(
+            &self,
+            _repo_root: &Path,
+            _head_oid: &str,
+            _upstream_oid: &str,
+        ) -> Option<(usize, usize)> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            None
+        }
+    }
 
     #[test]
     fn static_cache_headers_revalidate_entrypoints_and_public_files() {
@@ -5572,8 +5650,11 @@ mod tests {
 
     #[test]
     fn web_snapshot_adapter_preserves_web_shape_and_clear_name_flags() {
-        let snapshot =
-            web_snapshot_from_session_snapshot(test_session_snapshot(), Some("pane-2".to_string()));
+        let snapshot = web_snapshot_from_session_snapshot(
+            test_session_snapshot(),
+            Some("pane-2".to_string()),
+            &HashMap::new(),
+        );
 
         assert_eq!(snapshot.selected_pane_id.as_deref(), Some("pane-2"));
         assert_eq!(snapshot.workspaces.len(), 2);
@@ -5623,6 +5704,7 @@ mod tests {
         let snapshot = web_snapshot_from_session_snapshot(
             test_session_snapshot(),
             Some("missing".to_string()),
+            &HashMap::new(),
         );
 
         assert_eq!(snapshot.selected_pane_id.as_deref(), Some("pane-1"));
@@ -5630,9 +5712,107 @@ mod tests {
 
     #[test]
     fn web_snapshot_adapter_uses_focused_pane_before_shared_selection_exists() {
-        let snapshot = web_snapshot_from_session_snapshot(test_session_snapshot(), None);
+        let snapshot =
+            web_snapshot_from_session_snapshot(test_session_snapshot(), None, &HashMap::new());
 
         assert_eq!(snapshot.selected_pane_id.as_deref(), Some("pane-1"));
+    }
+
+    #[test]
+    fn web_snapshot_adapter_attaches_workspace_git_status() {
+        let git_statuses = HashMap::from([(
+            "workspace-1".to_string(),
+            WorkspaceGitStatus {
+                branch: Some("feat/sidebar".to_string()),
+                ahead: Some(2),
+                behind: Some(1),
+            },
+        )]);
+
+        let snapshot =
+            web_snapshot_from_session_snapshot(test_session_snapshot(), None, &git_statuses);
+
+        assert_eq!(
+            snapshot
+                .workspaces
+                .into_iter()
+                .map(|workspace| (workspace.info.workspace_id, workspace.git))
+                .collect::<HashMap<_, _>>(),
+            HashMap::from([
+                (
+                    "workspace-1".to_string(),
+                    Some(WorkspaceGitStatus {
+                        branch: Some("feat/sidebar".to_string()),
+                        ahead: Some(2),
+                        behind: Some(1),
+                    }),
+                ),
+                ("workspace-2".to_string(), None),
+            ])
+        );
+    }
+
+    #[test]
+    fn web_snapshot_adapter_omits_git_for_unknown_workspaces() {
+        let snapshot =
+            web_snapshot_from_session_snapshot(test_session_snapshot(), None, &HashMap::new());
+
+        let value = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(
+            value["workspaces"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|workspace| workspace.get("git").cloned())
+                .collect::<Vec<_>>(),
+            vec![None, None]
+        );
+    }
+
+    #[test]
+    fn web_snapshot_git_field_does_not_shadow_flattened_workspace_fields() {
+        let git_statuses = HashMap::from([(
+            "workspace-1".to_string(),
+            WorkspaceGitStatus {
+                branch: Some("feat/sidebar".to_string()),
+                ahead: Some(2),
+                behind: Some(1),
+            },
+        )]);
+        let snapshot =
+            web_snapshot_from_session_snapshot(test_session_snapshot(), None, &git_statuses);
+
+        assert_eq!(
+            serde_json::to_value(&snapshot.workspaces[0]).unwrap(),
+            serde_json::json!({
+                "workspace_id": "workspace-1",
+                "number": 1,
+                "label": "repo",
+                "focused": true,
+                "pane_count": 3,
+                "tab_count": 2,
+                "active_tab_id": "tab-1",
+                "agent_status": "idle",
+                "can_clear_name": false,
+                "git": {
+                    "branch": "feat/sidebar",
+                    "ahead": 2,
+                    "behind": 1,
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn snapshot_handler_does_not_run_git_work() {
+        let runner = Arc::new(FakeGitRunner::default());
+        let git_status = GitStatusManager::with_runner(runner.clone());
+        let snapshot = test_session_snapshot();
+
+        let statuses = observe_snapshot_git_statuses(&git_status, &snapshot);
+
+        assert_eq!(statuses, HashMap::new());
+        assert_eq!(runner.calls(), 0);
     }
 
     #[test]
