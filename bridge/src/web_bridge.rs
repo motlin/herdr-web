@@ -292,6 +292,16 @@ enum TerminalOutput {
     Close(String),
 }
 
+/// Height to resize an attaching pane to before restoring its real height, chosen so the
+/// two sizes always differ and herdr actually forwards a SIGWINCH.
+fn attach_resize_nudge_rows(rows: u16) -> u16 {
+    if rows > 1 {
+        rows - 1
+    } else {
+        rows + 1
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TerminalOutputFlushReason {
     Timer,
@@ -3718,6 +3728,16 @@ async fn handle_terminal_socket(socket: WebSocket, state: BridgeState, query: Te
     let write_tx = session.write_tx.clone();
     let mut terminal_rx = session.output_tx.subscribe();
     let mut output_coalescer = TerminalOutputCoalescer::new(coalesce_window);
+    // A terminal application declares its mouse modes (DECSET 1000/1002/1003/1006) once at
+    // startup, and herdr replays raw bytes without that state, so a browser attaching later
+    // never learns the pane is tracking the mouse. Resizing to a different height first makes
+    // herdr deliver a SIGWINCH, which prompts the application to re-declare them.
+    let _ = write_tx.send(ClientMessage::Resize {
+        cols,
+        rows: attach_resize_nudge_rows(rows),
+        cell_width_px: 0,
+        cell_height_px: 0,
+    });
     let _ = write_tx.send(ClientMessage::Resize {
         cols,
         rows,
@@ -5082,6 +5102,18 @@ mod tests {
                 source: "font-family = Example Mono".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn attach_resize_nudge_differs_from_the_real_size() {
+        assert_eq!(attach_resize_nudge_rows(40), 39);
+        assert_eq!(attach_resize_nudge_rows(2), 1);
+    }
+
+    #[test]
+    fn attach_resize_nudge_grows_when_the_pane_cannot_shrink() {
+        assert_eq!(attach_resize_nudge_rows(1), 2);
+        assert_eq!(attach_resize_nudge_rows(0), 1);
     }
 
     #[test]

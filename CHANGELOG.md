@@ -96,6 +96,8 @@
   removed the per-icon transform that compensated for it.
   [PR #55](https://github.com/kcosr/herdr-web/pull/55), contributed by
   [Philippe SEGATORI (@tigitz)](https://github.com/tigitz).
+- Fixed terminal mouse tracking not activating when a browser attached after the terminal
+  application enabled it.
 - Fixed Command-click and Control-click URL opening while terminal applications have mouse tracking
   enabled so matching press and release events are both withheld and macOS Ctrl-click context menus
   still open the URL.
