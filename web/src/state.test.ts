@@ -12,9 +12,17 @@ import {
   paneSubtitle,
   paneTitle,
   sortPanesForPicker,
+  sortPanesForTab,
   spaceSubtitle,
 } from "./state";
-import type { PaneInfo, Snapshot, TabInfo, WorkspaceInfo } from "./types";
+import type {
+  LayoutRect,
+  LayoutSnapshot,
+  PaneInfo,
+  Snapshot,
+  TabInfo,
+  WorkspaceInfo,
+} from "./types";
 
 const pane = (pane_id: string, focused = false, agent_status: PaneInfo["agent_status"] = "idle") =>
   ({
@@ -454,5 +462,73 @@ describe("rename clear heuristics", () => {
     expect(canClearWorkspaceName({ ...workspace("herdr-web"), can_clear_name: false }, panes)).toBe(
       false,
     );
+  });
+});
+
+describe("sortPanesForTab", () => {
+  const rect = (x: number, y: number): LayoutRect => ({ x, y, width: 40, height: 12 });
+
+  const layout = (positions: Array<[string, LayoutRect]>): LayoutSnapshot => ({
+    workspace_id: "1",
+    tab_id: "1-1",
+    zoomed: false,
+    area: { x: 0, y: 0, width: 80, height: 24 },
+    focused_pane_id: positions[0]?.[0] ?? "",
+    panes: positions.map(([pane_id, paneRect]) => ({
+      pane_id,
+      focused: false,
+      rect: paneRect,
+    })),
+    splits: [],
+  });
+
+  it("follows the layout's split-tree order rather than pane id order", () => {
+    const panes = [pane("1-1"), pane("1-2")];
+    const layouts = [
+      layout([
+        ["1-2", rect(0, 0)],
+        ["1-1", rect(40, 0)],
+      ]),
+    ];
+
+    expect(sortPanesForTab(panes, "1-1", layouts).map((item) => item.pane_id)).toEqual([
+      "1-2",
+      "1-1",
+    ]);
+  });
+
+  it("keeps a nested split's siblings together instead of reading the screen in rows", () => {
+    // Root splits right; the left side splits down. Herdr walks the tree depth first, so the
+    // left column's two panes stay adjacent even though the right pane shares the top row.
+    const panes = [pane("1-1"), pane("1-2"), pane("1-3")];
+    const layouts = [
+      layout([
+        ["1-1", rect(0, 0)],
+        ["1-2", rect(0, 12)],
+        ["1-3", rect(40, 0)],
+      ]),
+    ];
+
+    expect(sortPanesForTab(panes, "1-1", layouts).map((item) => item.pane_id)).toEqual([
+      "1-1",
+      "1-2",
+      "1-3",
+    ]);
+  });
+
+  it("falls back to pane id order when the tab has no layout", () => {
+    const panes = [pane("1-10"), pane("1-2")];
+
+    expect(sortPanesForTab(panes, "1-1", []).map((item) => item.pane_id)).toEqual(["1-2", "1-10"]);
+  });
+
+  it("keeps panes the layout does not position after the positioned ones", () => {
+    const panes = [pane("1-1"), pane("1-2")];
+    const layouts = [layout([["1-2", rect(0, 0)]])];
+
+    expect(sortPanesForTab(panes, "1-1", layouts).map((item) => item.pane_id)).toEqual([
+      "1-2",
+      "1-1",
+    ]);
   });
 });

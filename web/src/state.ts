@@ -1,6 +1,7 @@
 import type {
   AgentStatus,
   LayoutRect,
+  LayoutSnapshot,
   PaneInfo,
   Snapshot,
   TabInfo,
@@ -301,10 +302,38 @@ export function sortTabsForWorkspace(tabs: TabInfo[], workspaceId: string) {
     .sort((a, b) => a.number - b.number);
 }
 
-export function sortPanesForTab(panes: PaneInfo[], tabId: string) {
+/**
+ * Herdr walks a tab's split tree depth first, first child before second, and emits the panes
+ * in that order, so the layout's own pane order is the order to follow. Panes the layout does
+ * not list sort last by pane id, which is also the order used for a tab with no layout.
+ */
+export function sortPanesForTab(
+  panes: PaneInfo[],
+  tabId: string,
+  layouts: LayoutSnapshot[] = [],
+) {
+  const layoutOrder = new Map(
+    layouts
+      .find((layout) => layout.tab_id === tabId)
+      ?.panes.map((pane, index) => [pane.pane_id, index]) ?? [],
+  );
+
   return panes
     .filter((pane) => pane.tab_id === tabId)
-    .sort((a, b) => a.pane_id.localeCompare(b.pane_id, undefined, { numeric: true }));
+    .sort((a, b) => {
+      const left = layoutOrder.get(a.pane_id);
+      const right = layoutOrder.get(b.pane_id);
+      if (left === undefined || right === undefined) {
+        if (left !== undefined) {
+          return -1;
+        }
+        if (right !== undefined) {
+          return 1;
+        }
+        return a.pane_id.localeCompare(b.pane_id, undefined, { numeric: true });
+      }
+      return left - right;
+    });
 }
 
 export function sortPanesForPicker(panes: PaneInfo[]) {

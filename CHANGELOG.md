@@ -19,6 +19,9 @@
   removed the per-icon transform that compensated for it.
   [PR #55](https://github.com/kcosr/herdr-web/pull/55), contributed by
   [Philippe SEGATORI (@tigitz)](https://github.com/tigitz).
+- Fixed a tab's panes listing in pane id order (sidebar pane rows and the pane shortcut list) by
+  following the pane order Herdr reports in the tab's layout, and kept pane id order only for
+  panes that layout omits.
 
 ### Removed
 

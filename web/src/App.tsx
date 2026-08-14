@@ -2962,7 +2962,7 @@ export function App() {
         }
         event.preventDefault();
         event.stopPropagation();
-        const tabPanes = sortPanesForTab(snapshot.panes, tab.tab_id);
+        const tabPanes = sortPanesForTab(snapshot.panes, tab.tab_id, snapshot.layouts);
         if (tabPanes.length > 1 && selectedPane?.tab_id === tab.tab_id) {
           setDialog({
             mode: "close",
@@ -5080,7 +5080,7 @@ export function buildVisibleTabWorkspaceGroups(
     .map((entry) => {
       const tabs = sortTabsForWorkspace(entry.snapshot.tabs, entry.workspace.workspace_id)
         .map((tab) => {
-          const panes = sortPanesForTab(entry.snapshot.panes, tab.tab_id);
+          const panes = sortPanesForTab(entry.snapshot.panes, tab.tab_id, entry.snapshot.layouts);
           const pinnedPanes = pinnedOnly
             ? panes.filter((pane) => isAgentPinned(pinnedAgentKeys, entry.bridgeId, pane.pane_id))
             : panes;
@@ -5636,7 +5636,7 @@ function orderedShortcutTabPanes(
   selectedPane: PaneInfo | null,
 ) {
   const tab = activeShortcutTab(snapshot, activeSpace, selectedPane);
-  return tab ? sortPanesForTab(snapshot.panes, tab.tab_id) : [];
+  return tab ? sortPanesForTab(snapshot.panes, tab.tab_id, snapshot.layouts) : [];
 }
 
 function isAppNavigationShortcut(event: KeyboardEvent) {
