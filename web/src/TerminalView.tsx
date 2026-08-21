@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, RefObject } from "react";
+import type { ITheme } from "ghostty-web";
 import { autosizeMobileCommandTextarea } from "./mobileCommandTextarea";
 import { ConfirmDialog } from "./overlays";
 import { addNativeResumeHandler } from "./native";
@@ -44,7 +45,11 @@ import {
   isTerminalOutputGzipAcknowledgement,
   terminalOutputGzipSupported,
 } from "./terminalOutputEncoding";
-import { DEFAULT_TERMINAL_FONT_SIZE_PX } from "./terminalPrefs";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_SIZE_PX,
+} from "./terminalPrefs";
+import { DEFAULT_TERMINAL_THEME } from "./terminalTheme";
 import {
   TERMINAL_FOREGROUND_FAST_ATTEMPTS,
   TERMINAL_FOREGROUND_CONNECT_TIMEOUT_MS,
@@ -76,6 +81,10 @@ type Props = {
   cursorBlink?: boolean;
   /** Terminal renderer font size in CSS pixels. */
   terminalFontSizePx?: number;
+  /** CSS font-family stack used by the terminal renderer. */
+  terminalFontFamily?: string;
+  /** Colors used for terminal defaults and the ANSI palette. */
+  terminalTheme?: ITheme;
   /** Percentage scale applied to mobile terminal controls. */
   mobileControlsScalePercent?: number;
   /** Where terminal taps should send focus on mobile. */
@@ -155,6 +164,8 @@ export function TerminalView({
   mobileControls = false,
   cursorBlink = true,
   terminalFontSizePx = DEFAULT_TERMINAL_FONT_SIZE_PX,
+  terminalFontFamily = DEFAULT_TERMINAL_FONT_FAMILY,
+  terminalTheme = DEFAULT_TERMINAL_THEME,
   mobileControlsScalePercent = 100,
   mobileTapTarget = "command-input",
   mobileLongPressBehavior = "off",
@@ -216,6 +227,10 @@ export function TerminalView({
   cursorBlinkRef.current = cursorBlink;
   const terminalFontSizePxRef = useRef(terminalFontSizePx);
   terminalFontSizePxRef.current = terminalFontSizePx;
+  const terminalFontFamilyRef = useRef(terminalFontFamily);
+  terminalFontFamilyRef.current = terminalFontFamily;
+  const terminalThemeRef = useRef(terminalTheme);
+  terminalThemeRef.current = terminalTheme;
   const mobileTapTargetRef = useRef(mobileTapTarget);
   mobileTapTargetRef.current = mobileTapTarget;
   const mobileLongPressBehaviorRef = useRef(mobileLongPressBehavior);
@@ -507,6 +522,8 @@ export function TerminalView({
     rendererGenerationRef.current = generation;
     const renderer: TerminalRenderer = new GhosttyRenderer(
       terminalFontSizePxRef.current,
+      terminalFontFamilyRef.current,
+      terminalThemeRef.current,
       cursorBlinkRef.current,
     );
     rendererRef.current = renderer;
@@ -1138,6 +1155,17 @@ export function TerminalView({
       sendResizeRef.current(size);
     }
   }, [terminalFontSizePx]);
+
+  useEffect(() => {
+    const size = rendererRef.current?.setFontFamily(terminalFontFamily);
+    if (size) {
+      sendResizeRef.current(size);
+    }
+  }, [terminalFontFamily]);
+
+  useEffect(() => {
+    rendererRef.current?.setTheme(terminalTheme);
+  }, [terminalTheme]);
 
   useEffect(() => {
     setMobileSelectionAction(null);

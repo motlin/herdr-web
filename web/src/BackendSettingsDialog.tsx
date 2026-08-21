@@ -39,9 +39,11 @@ import {
   parseMobileControlsScalePercent,
 } from "./displayPrefs";
 import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
   MAX_TERMINAL_FONT_SIZE_PX,
   MIN_TERMINAL_FONT_SIZE_PX,
+  parseTerminalFontFamily,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
 import {
@@ -54,6 +56,7 @@ import type {
 } from "./mobileTerminalPrefs";
 import type { NavigationSyncMode } from "./navigationPrefs";
 import { trapFocusWithin, useFocusReturn } from "./overlayFocus";
+import { DEFAULT_TERMINAL_THEME_SOURCE } from "./terminalTheme";
 import { TERMINAL_INPUT_BATCH_DELAY_OPTIONS_MS } from "./terminalInputTransport";
 import type { TerminalInputTransport } from "./terminalInputTransport";
 import { TERMINAL_OUTPUT_COALESCE_OPTIONS_MS } from "./terminalOutputCoalescing";
@@ -74,6 +77,12 @@ type Props = {
   onTerminalFontSizePx: (value: number) => void;
   terminalScreenReaderText: boolean;
   onTerminalScreenReaderText: (enabled: boolean) => void;
+  terminalFontFamily: string;
+  onTerminalFontFamily: (value: string) => void;
+  terminalThemeSource: string;
+  onTerminalThemeSource: (value: string) => void;
+  ghosttyConfigImportAvailable: boolean;
+  onImportGhosttyConfig: () => Promise<void>;
   terminalInputTransport: TerminalInputTransport;
   onTerminalInputTransport: (transport: TerminalInputTransport) => void;
   terminalInputBatchDelayMs: number;
@@ -130,6 +139,12 @@ export function BackendSettingsDialog({
   onTerminalFontSizePx,
   terminalScreenReaderText,
   onTerminalScreenReaderText,
+  terminalFontFamily,
+  onTerminalFontFamily,
+  terminalThemeSource,
+  onTerminalThemeSource,
+  ghosttyConfigImportAvailable,
+  onImportGhosttyConfig,
   terminalInputTransport,
   onTerminalInputTransport,
   terminalInputBatchDelayMs,
@@ -167,6 +182,10 @@ export function BackendSettingsDialog({
   );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [terminalConfigImportBusy, setTerminalConfigImportBusy] = useState(false);
+  const [terminalConfigImportMessage, setTerminalConfigImportMessage] = useState<string | null>(
+    null,
+  );
   const [duplicate, setDuplicate] = useState<BridgeBackendProfile | null>(null);
   const [activeArea, setActiveArea] = useState<SettingsArea>("bridge");
 
@@ -174,6 +193,21 @@ export function BackendSettingsDialog({
     () => bridge.store.backends.find((backend) => backend.id === form.id) ?? null,
     [bridge.store.backends, form.id],
   );
+
+  const importGhosttyConfig = async () => {
+    setTerminalConfigImportBusy(true);
+    setTerminalConfigImportMessage(null);
+    try {
+      await onImportGhosttyConfig();
+      setTerminalConfigImportMessage("Imported terminal appearance from Ghostty.");
+    } catch (importError) {
+      setTerminalConfigImportMessage(
+        importError instanceof Error ? importError.message : "Ghostty config import failed",
+      );
+    } finally {
+      setTerminalConfigImportBusy(false);
+    }
+  };
   const sameOriginEnabled = bridge.store.enabledBridgeIds.includes(SAME_ORIGIN_BRIDGE_ID);
 
   useEffect(() => {
@@ -686,6 +720,27 @@ export function BackendSettingsDialog({
               <div className="settings-section settings-section-flat">
                 <div className="settings-label">Terminal appearance</div>
                 <div className="settings-row">
+                  <span>Ghostty config</span>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={!ghosttyConfigImportAvailable || terminalConfigImportBusy}
+                    onClick={() => void importGhosttyConfig()}
+                  >
+                    {terminalConfigImportBusy ? "Importing…" : "Import from bridge"}
+                  </button>
+                </div>
+                {terminalConfigImportMessage ? (
+                  <div className="settings-hint" role="status">
+                    {terminalConfigImportMessage}
+                  </div>
+                ) : null}
+                {!ghosttyConfigImportAvailable ? (
+                  <div className="settings-hint">
+                    The selected bridge does not support Ghostty config import.
+                  </div>
+                ) : null}
+                <div className="settings-row">
                   <span>Font size</span>
                   <NumberSettingControl
                     ariaLabel="Terminal font size"
@@ -696,6 +751,28 @@ export function BackendSettingsDialog({
                     defaultValue={DEFAULT_TERMINAL_FONT_SIZE_PX}
                     onChange={(value) => onTerminalFontSizePx(parseTerminalFontSizePx(value))}
                   />
+                </div>
+                <div className="settings-row">
+                  <span>Font family</span>
+                  <TextSettingControl
+                    ariaLabel="Terminal font family"
+                    value={terminalFontFamily}
+                    defaultValue={DEFAULT_TERMINAL_FONT_FAMILY}
+                    onChange={(value) => onTerminalFontFamily(parseTerminalFontFamily(value))}
+                  />
+                </div>
+                <div className="settings-row settings-row-top">
+                  <span>Ghostty config or palette</span>
+                  <MultilineTextSettingControl
+                    ariaLabel="Ghostty terminal config or palette"
+                    value={terminalThemeSource}
+                    defaultValue={DEFAULT_TERMINAL_THEME_SOURCE}
+                    onChange={onTerminalThemeSource}
+                  />
+                </div>
+                <div className="settings-hint">
+                  Paste a complete Ghostty config or color lines from a theme file. Font, size,
+                  and supported colors are applied together; named themes are not resolved.
                 </div>
                 <div className="settings-label">Accessibility</div>
                 <div className="settings-row">
@@ -1165,6 +1242,120 @@ function NumberSettingControl({
         onCommit={onChange}
       />
       <span className="settings-unit">{unit}</span>
+      <ResetSettingButton
+        disabled={value === defaultValue}
+        label={`Reset ${ariaLabel.toLowerCase()}`}
+        onClick={() => onChange(defaultValue)}
+      />
+    </div>
+  );
+}
+
+function TextSettingControl({
+  ariaLabel,
+  value,
+  defaultValue,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  defaultValue: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const cancelBlurCommitRef = useRef(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (cancelBlurCommitRef.current) {
+      cancelBlurCommitRef.current = false;
+      return;
+    }
+    onChange(draft);
+  };
+
+  return (
+    <div className="settings-text-control">
+      <input
+        className="settings-text-field mono"
+        type="text"
+        value={draft}
+        aria-label={ariaLabel}
+        spellCheck={false}
+        autoCapitalize="none"
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelBlurCommitRef.current = true;
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      <ResetSettingButton
+        disabled={value === defaultValue}
+        label={`Reset ${ariaLabel.toLowerCase()}`}
+        onClick={() => onChange(defaultValue)}
+      />
+    </div>
+  );
+}
+
+function MultilineTextSettingControl({
+  ariaLabel,
+  value,
+  defaultValue,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  defaultValue: string;
+  onChange: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const cancelBlurCommitRef = useRef(false);
+
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (cancelBlurCommitRef.current) {
+      cancelBlurCommitRef.current = false;
+      return;
+    }
+    onChange(draft);
+  };
+
+  return (
+    <div className="settings-textarea-control">
+      <textarea
+        className="settings-textarea-field mono"
+        value={draft}
+        aria-label={ariaLabel}
+        rows={8}
+        spellCheck={false}
+        autoCapitalize="none"
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelBlurCommitRef.current = true;
+            setDraft(value);
+            event.currentTarget.blur();
+          }
+        }}
+      />
       <ResetSettingButton
         disabled={value === defaultValue}
         label={`Reset ${ariaLabel.toLowerCase()}`}

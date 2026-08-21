@@ -22,6 +22,7 @@ import {
   Unlink,
   X,
 } from "lucide-react";
+import type { ITheme } from "ghostty-web";
 import {
   Fragment,
   Suspense,
@@ -158,9 +159,21 @@ import {
   parseTerminalOutputCoalesceMs,
 } from "./terminalOutputCoalescing";
 import {
+  fetchGhosttyConfig,
+  supportsGhosttyConfigImport,
+  terminalAppearanceFromGhosttySource,
+} from "./terminalConfig";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE_PX,
+  parseTerminalFontFamily,
   parseTerminalFontSizePx,
 } from "./terminalPrefs";
+import {
+  DEFAULT_TERMINAL_THEME_SOURCE,
+  parseTerminalThemeSource,
+  terminalThemeFromGhosttySource,
+} from "./terminalTheme";
 import {
   aggregateStatus,
   basename,
@@ -412,6 +425,8 @@ type DisplayPrefs = {
   sidebarOpen: boolean;
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
+  terminalFontFamily: string;
+  terminalThemeSource: string;
   terminalInputTransport: TerminalInputTransport;
   terminalInputBatchDelayMs: number;
   terminalOutputCoalesceMs: number;
@@ -476,6 +491,8 @@ function readDisplayPrefs(): DisplayPrefs {
     sidebarOpen: true,
     terminalFontSizePx: DEFAULT_TERMINAL_FONT_SIZE_PX,
     terminalScreenReaderText: DEFAULT_TERMINAL_SCREEN_READER_TEXT,
+    terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminalThemeSource: DEFAULT_TERMINAL_THEME_SOURCE,
     terminalInputTransport: DEFAULT_TERMINAL_INPUT_TRANSPORT,
     terminalInputBatchDelayMs: DEFAULT_TERMINAL_INPUT_BATCH_DELAY_MS,
     terminalOutputCoalesceMs: DEFAULT_TERMINAL_OUTPUT_COALESCE_MS,
@@ -675,6 +692,8 @@ function parseDisplayPrefsValue(
       parsed.terminalScreenReaderText,
       fallback.terminalScreenReaderText,
     ),
+    terminalFontFamily: parseTerminalFontFamily(parsed.terminalFontFamily),
+    terminalThemeSource: parseTerminalThemeSource(parsed.terminalThemeSource),
     terminalInputTransport: parseTerminalInputTransport(parsed.terminalInputTransport),
     terminalInputBatchDelayMs: parseTerminalInputBatchDelayMs(parsed.terminalInputBatchDelayMs),
     terminalOutputCoalesceMs: parseTerminalOutputCoalesceMs(
@@ -1053,6 +1072,16 @@ export function App() {
   const [terminalScreenReaderText, setTerminalScreenReaderText] = useState(
     initialPrefs.terminalScreenReaderText,
   );
+  const [terminalFontFamily, setTerminalFontFamily] = useState(
+    initialPrefs.terminalFontFamily,
+  );
+  const [terminalThemeSource, setTerminalThemeSource] = useState(
+    initialPrefs.terminalThemeSource,
+  );
+  const terminalTheme = useMemo(
+    () => terminalThemeFromGhosttySource(terminalThemeSource),
+    [terminalThemeSource],
+  );
   const [terminalInputTransport, setTerminalInputTransport] = useState(
     initialPrefs.terminalInputTransport,
   );
@@ -1181,6 +1210,8 @@ export function App() {
       setActiveWorkspacesByBridgeId(sharedNavigationPrefs.activeWorkspacesByBridgeId);
       setTerminalFontSizePx(prefs.terminalFontSizePx);
       setTerminalScreenReaderText(prefs.terminalScreenReaderText);
+      setTerminalFontFamily(prefs.terminalFontFamily);
+      setTerminalThemeSource(prefs.terminalThemeSource);
       setTerminalInputTransport(prefs.terminalInputTransport);
       setTerminalInputBatchDelayMs(prefs.terminalInputBatchDelayMs);
       setTerminalOutputCoalesceMs(prefs.terminalOutputCoalesceMs);
@@ -1338,6 +1369,41 @@ export function App() {
     () => selectedRuntime?.httpUrl ?? disconnectedHttpUrl,
     [selectedRuntime?.connectionKey],
   );
+  const applyGhosttyAppearanceSource = useCallback((source: string) => {
+    const appearance = terminalAppearanceFromGhosttySource(source);
+    if (appearance.fontFamily !== undefined) {
+      setTerminalFontFamily(appearance.fontFamily);
+    }
+    if (appearance.fontSizePx !== undefined) {
+      setTerminalFontSizePx(appearance.fontSizePx);
+    }
+    if (appearance.themeSource !== undefined) {
+      setTerminalThemeSource(appearance.themeSource);
+    }
+  }, []);
+  const changeGhosttyAppearanceSource = useCallback(
+    (source: string) => {
+      try {
+        applyGhosttyAppearanceSource(source);
+        setError(null);
+      } catch (appearanceError) {
+        setError(
+          appearanceError instanceof Error
+            ? appearanceError.message
+            : "Ghostty config import failed",
+        );
+      }
+    },
+    [applyGhosttyAppearanceSource],
+  );
+  const importGhosttyConfig = useCallback(async () => {
+    if (!selectedRuntime) {
+      throw new Error("Select a connected bridge before importing Ghostty config");
+    }
+    const response = await fetchGhosttyConfig(selectedRuntime.httpUrl);
+    applyGhosttyAppearanceSource(response.source);
+    setError(null);
+  }, [applyGhosttyAppearanceSource, selectedRuntime]);
   const selectedWsUrl = useMemo(
     () => selectedRuntime?.wsUrl ?? disconnectedWsUrl,
     [selectedRuntime?.connectionKey],
@@ -1724,6 +1790,8 @@ export function App() {
       sidebarOpen,
       terminalFontSizePx,
       terminalScreenReaderText,
+      terminalFontFamily,
+      terminalThemeSource,
       terminalInputTransport,
       terminalInputBatchDelayMs,
       terminalOutputCoalesceMs,
@@ -1760,6 +1828,8 @@ export function App() {
     sidebarOpen,
     terminalFontSizePx,
     terminalScreenReaderText,
+    terminalFontFamily,
+    terminalThemeSource,
     terminalInputTransport,
     terminalInputBatchDelayMs,
     terminalOutputCoalesceMs,
@@ -4065,6 +4135,8 @@ export function App() {
             touchInput={isTouchInput}
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
+            terminalFontFamily={terminalFontFamily}
+            terminalTheme={terminalTheme}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4092,6 +4164,8 @@ export function App() {
             cursorBlink={!isTouchInput}
             terminalFontSizePx={terminalFontSizePx}
             terminalScreenReaderText={terminalScreenReaderText}
+            terminalFontFamily={terminalFontFamily}
+            terminalTheme={terminalTheme}
             mobileControlsScalePercent={mobileControlsScalePercent}
             mobileTapTarget={mobileTerminalTapTarget}
             mobileLongPressBehavior={mobileLongPressBehavior}
@@ -4330,6 +4404,14 @@ export function App() {
           onTerminalFontSizePx={setTerminalFontSizePx}
           terminalScreenReaderText={terminalScreenReaderText}
           onTerminalScreenReaderText={setTerminalScreenReaderText}
+          terminalFontFamily={terminalFontFamily}
+          onTerminalFontFamily={setTerminalFontFamily}
+          terminalThemeSource={terminalThemeSource}
+          onTerminalThemeSource={changeGhosttyAppearanceSource}
+          ghosttyConfigImportAvailable={supportsGhosttyConfigImport(
+            selectedRuntime?.capabilities,
+          )}
+          onImportGhosttyConfig={importGhosttyConfig}
           terminalInputTransport={terminalInputTransport}
           onTerminalInputTransport={setTerminalInputTransport}
           terminalInputBatchDelayMs={terminalInputBatchDelayMs}
@@ -5795,6 +5877,8 @@ function SplitGrid({
   touchInput,
   terminalFontSizePx,
   terminalScreenReaderText,
+  terminalFontFamily,
+  terminalTheme,
   mobileControlsScalePercent,
   mobileTapTarget,
   mobileLongPressBehavior,
@@ -5817,6 +5901,8 @@ function SplitGrid({
   touchInput: boolean;
   terminalFontSizePx: number;
   terminalScreenReaderText: boolean;
+  terminalFontFamily: string;
+  terminalTheme: ITheme;
   mobileControlsScalePercent: number;
   mobileTapTarget: MobileTerminalTapTarget;
   mobileLongPressBehavior: MobileLongPressBehavior;
@@ -5856,6 +5942,8 @@ function SplitGrid({
               cursorBlink={!touchInput}
               terminalFontSizePx={terminalFontSizePx}
               terminalScreenReaderText={terminalScreenReaderText}
+              terminalFontFamily={terminalFontFamily}
+              terminalTheme={terminalTheme}
               mobileControlsScalePercent={mobileControlsScalePercent}
               mobileTapTarget={mobileTapTarget}
               mobileLongPressBehavior={mobileLongPressBehavior}

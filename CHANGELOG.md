@@ -6,6 +6,13 @@
 
 ### Added
 
+- Added a persisted terminal font-family setting so browsers can use installed Nerd Fonts and
+  custom CSS fallback stacks.
+- Added a terminal palette setting that imports Ghostty theme color lines for exact ANSI color
+  matching. The palette field accepts a complete config and applies its font, size, and supported
+  colors together.
+- Added one-action terminal appearance import from the selected bridge's standard Ghostty config.
+
 ### Changed
 
 ### Fixed

@@ -42,6 +42,9 @@ export type BridgeCapabilities = {
   agent_pins?: {
     version: 1;
   };
+  ghostty_config?: {
+    version: 1;
+  };
   notes?: {
     version: 1;
   };
@@ -1076,6 +1079,10 @@ export function parseCapabilities(value: unknown): BridgeCapabilities {
         : undefined,
     agent_pins:
       isRecord(value.agent_pins) && value.agent_pins.version === 1
+        ? { version: 1 }
+        : undefined,
+    ghostty_config:
+      isRecord(value.ghostty_config) && value.ghostty_config.version === 1
         ? { version: 1 }
         : undefined,
     notes:

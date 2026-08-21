@@ -41,6 +41,7 @@ session.
 The app expects these bridge routes:
 
 - `/api/capabilities`
+- `/api/ghostty-config`
 - `/api/snapshot`
 - `/api/command`
 - `/api/launcher-presets`
