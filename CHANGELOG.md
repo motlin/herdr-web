@@ -10,6 +10,10 @@
 
 ### Fixed
 
+- Fixed Command-click and Control-click URL opening while terminal applications hold mouse
+  tracking, so matching press and release events are both withheld and macOS Ctrl-click context
+  menus still open the URL.
+
 ### Removed
 
 ## [0.5.0] - 2026-08-21
