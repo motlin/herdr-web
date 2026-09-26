@@ -5,6 +5,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       npm-minor-and-patch:
@@ -18,6 +20,8 @@ updates:
     directory: "/web"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       npm-minor-and-patch:
@@ -31,6 +35,8 @@ updates:
     directory: "/bridge"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       cargo-minor-and-patch:
@@ -44,6 +50,8 @@ updates:
     directory: "/vendor/herdr-compat"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       cargo-minor-and-patch:

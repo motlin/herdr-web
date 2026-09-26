@@ -3,7 +3,7 @@
 > This repository is not associated with, endorsed by, or maintained by the official Herdr project.
 > It is experimental, Herdr compatibility code is vendored, and the runtime/API shape is expected to
 > change.
-
+>
 > This is an intentionally minimal personal development tool. Focused contributions are welcome;
 > please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 

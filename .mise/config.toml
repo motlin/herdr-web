@@ -3,5 +3,6 @@ just = "1.57.0"
 node = "26.5.0"
 rust = { version = "1.97.1", components = "clippy,rustfmt" }
 pre-commit = "4.6.1"
+ripgrep = "15.2.0"
 "npm:markdownlint-cli2" = "0.23.2"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
