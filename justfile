@@ -1,5 +1,3 @@
-set dotenv-filename := ".envrc"
-
 # `just --list --unsorted`
 default:
     @just --list --unsorted
